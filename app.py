@@ -1,4 +1,4 @@
-# BookMarketabilityChecker.py - WITH EMAIL AND FULL ANALYSIS
+# BookMarketabilityChecker.py - SIMPLIFIED ONE OPTION
 import streamlit as st
 import openai
 import PyPDF2
@@ -171,6 +171,16 @@ def show_marketability_checker():
             margin: 2rem 0;
             border: 2px solid #667eea;
         }
+        .free-badge {
+            background: #00cc66;
+            color: white;
+            padding: 0.3rem 1rem;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: bold;
+            display: inline-block;
+            margin-left: 1rem;
+        }
     </style>
     """, unsafe_allow_html=True)
     
@@ -201,17 +211,10 @@ def show_upload_section():
     
     st.markdown("""
     <div class="feature-box">
-        <h3>📤 Upload your manuscript</h3>
-        <p>We'll analyze your book and email you the results.</p>
+        <h3>📤 Upload your manuscript <span class="free-badge">FREE</span></h3>
+        <p>We'll analyze your entire manuscript (up to 50,000 characters) and email you the results.</p>
     </div>
     """, unsafe_allow_html=True)
-    
-    # Analysis depth option
-    analysis_depth = st.radio(
-        "How much of your manuscript should we analyze?",
-        ["Quick scan (first 3 pages) - FREE", "Deep analysis (full manuscript) - $0.50"],
-        index=0
-    )
     
     col1, col2 = st.columns(2)
     
@@ -248,18 +251,11 @@ def show_upload_section():
     st.markdown("---")
     
     if manuscript and email:
-        # Show cost if deep analysis selected
-        if "Deep analysis" in analysis_depth:
-            st.info("💰 Deep analysis cost: $0.50 (charged to your OpenAI account)")
-        
-        if st.button("🔍 GET MY MARKETABILITY SCORE", type="primary", use_container_width=True):
-            with st.spinner("Analyzing your book... (this may take 1-2 minutes)"):
+        if st.button("🔍 GET MY FREE MARKETABILITY SCORE", type="primary", use_container_width=True):
+            with st.spinner("Analyzing your book... (about 60 seconds)"):
                 
-                # Extract text based on depth
-                if "Quick scan" in analysis_depth:
-                    text = extract_text_sample(manuscript, max_chars=5000, pages=3)
-                else:
-                    text = extract_text_full(manuscript)
+                # Extract full manuscript (capped at 50k chars)
+                text = extract_text_full(manuscript, max_chars=50000)
                 
                 # Process cover if provided
                 cover_analysis = None
@@ -390,18 +386,22 @@ def analyze_cover_simple(cover_base64):
         return None
 
 def analyze_marketability(text, cover_analysis):
-    """Marketability analysis"""
+    """Marketability analysis with gpt-4o-mini"""
     
     cover_text = ""
     if cover_analysis:
         cover_text = f"\nCOVER ANALYSIS:\n{json.dumps(cover_analysis, indent=2)}"
     
+    # Truncate text if needed (API limits)
+    if len(text) > 45000:
+        text = text[:45000] + "... [truncated]"
+    
     prompt = f"""
-    Based on this manuscript excerpt, provide a marketability analysis.
+    Based on this manuscript, provide a marketability analysis.
     {cover_text}
     
-    MANUSCRIPT EXCERPT:
-    {text[:5000]}
+    MANUSCRIPT:
+    {text}
     
     Return JSON with:
     
@@ -415,7 +415,8 @@ def analyze_marketability(text, cover_analysis):
                 "commercial_potential": {{"score": 0-100, "explanation": "brief"}},
                 "genre_fit": {{"score": 0-100, "explanation": "brief"}},
                 "hook_strength": {{"score": 0-100, "explanation": "brief"}},
-                "character_appeal": {{"score": 0-100, "explanation": "brief"}}
+                "character_appeal": {{"score": 0-100, "explanation": "brief"}},
+                "cover_effectiveness": {{"score": 0-100, "explanation": "brief"}}
             }}
         }},
         
@@ -456,50 +457,26 @@ def analyze_marketability(text, cover_analysis):
             }
         }
 
-def extract_text_sample(file, max_chars=5000, pages=3):
-    """Extract first few pages"""
-    try:
-        if file.type == "application/pdf":
-            pdf_reader = PyPDF2.PdfReader(file)
-            text = ""
-            for page in pdf_reader.pages[:pages]:
-                text += page.extract_text()
-            return text[:max_chars]
-            
-        elif file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-            doc = docx.Document(file)
-            text = ""
-            for para in doc.paragraphs[:pages*10]:  # Approx 10 paragraphs per page
-                text += para.text + "\n"
-            return text[:max_chars]
-            
-        else:  # txt
-            text = file.getvalue().decode("utf-8")
-            return text[:max_chars]
-            
-    except Exception as e:
-        return f"Error extracting text: {str(e)}"
-
-def extract_text_full(file):
-    """Extract entire manuscript"""
+def extract_text_full(file, max_chars=50000):
+    """Extract entire manuscript up to max_chars"""
     try:
         if file.type == "application/pdf":
             pdf_reader = PyPDF2.PdfReader(file)
             text = ""
             for page in pdf_reader.pages:
                 text += page.extract_text()
-            return text[:50000]  # Still cap at 50k chars for API limits
+            return text[:max_chars]
             
         elif file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
             doc = docx.Document(file)
             text = ""
             for para in doc.paragraphs:
                 text += para.text + "\n"
-            return text[:50000]
+            return text[:max_chars]
             
         else:  # txt
             text = file.getvalue().decode("utf-8")
-            return text[:50000]
+            return text[:max_chars]
             
     except Exception as e:
         return f"Error extracting text: {str(e)}"
