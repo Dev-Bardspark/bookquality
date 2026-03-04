@@ -1,4 +1,4 @@
-# BookMarketabilityChecker.py - FIXED WITH ALL FEATURES
+# BookMarketabilityChecker.py - COMPLETE FIXED VERSION
 import streamlit as st
 import openai
 import PyPDF2
@@ -22,10 +22,10 @@ SENDER_EMAIL = st.secrets["SENDER_EMAIL"]
 SENDER_PASSWORD = st.secrets["SENDER_PASSWORD"]
 USE_TLS = st.secrets.get("use_tls", True)
 
-def send_email(recipient_email, analysis_results, cover_analysis, book_title):
+def send_email(recipient_email, analysis_results, cover_analysis, book_title, author_name):
     """Send full analysis results via email"""
     
-    subject = f"Your Complete Book Analysis: {book_title}"
+    subject = f"Your Complete Book Analysis: {book_title} by {author_name}"
     
     # Format the email body with FULL analysis
     marketability = analysis_results.get('marketability', {})
@@ -38,7 +38,8 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title):
     <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
         <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; border-radius: 10px; color: white; text-align: center;">
             <h1>Your Complete Book Analysis</h1>
-            <h2 style="font-size: 28px;">{book_info.get('title', 'Your Book')}</h2>
+            <h2 style="font-size: 32px; margin: 10px 0;">{book_title}</h2>
+            <h3 style="font-size: 20px; margin: 0 0 20px 0; opacity: 0.9;">by {author_name}</h3>
             <div style="font-size: 48px; font-weight: bold; margin: 20px 0;">{score} ({grade})</div>
             <p>Marketability Score</p>
         </div>
@@ -126,11 +127,24 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title):
             """
         body += "</div>"
     
+    # Narrative Arc
+    if 'narrative_arc' in analysis_results:
+        arc = analysis_results['narrative_arc']
+        body += f"""
+        <div style="padding: 20px; margin-top: 20px;">
+            <h2>📖 Narrative Arc</h2>
+            <p><strong>Exposition:</strong> {arc.get('exposition', '')}</p>
+            <p><strong>Rising Action:</strong> {arc.get('rising_action', '')}</p>
+            <p><strong>Climax:</strong> {arc.get('climax', '')}</p>
+            <p><strong>Resolution:</strong> {arc.get('resolution', '')}</p>
+        </div>
+        """
+    
     # Plot Overview
     if 'plot' in analysis_results:
         plot = analysis_results['plot']
         body += f"""
-        <div style="padding: 20px; margin-top: 20px;">
+        <div style="padding: 20px; background: #f8f9fa; border-radius: 10px; margin-top: 20px;">
             <h2>📊 Plot Analysis</h2>
             <p><strong>Opening Hook:</strong> {plot.get('opening_hook', '')}</p>
             <p><strong>Inciting Incident:</strong> {plot.get('inciting_incident', '')}</p>
@@ -141,7 +155,7 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title):
     if 'themes' in analysis_results:
         themes = analysis_results['themes']
         body += f"""
-        <div style="padding: 20px; background: #f8f9fa; border-radius: 10px; margin-top: 20px;">
+        <div style="padding: 20px; margin-top: 20px;">
             <h2>🎯 Themes</h2>
             <p><strong>Primary:</strong> {', '.join(themes.get('primary', []))}</p>
         </div>
@@ -150,7 +164,7 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title):
     # Cover analysis if available
     if cover_analysis:
         body += f"""
-        <div style="padding: 20px; margin-top: 20px;">
+        <div style="padding: 20px; background: #f8f9fa; border-radius: 10px; margin-top: 20px;">
             <h2>🎨 Cover Analysis</h2>
             <p><strong>Mood:</strong> {cover_analysis.get('mood', 'N/A')}</p>
             <p><strong>Genre Signals:</strong> {cover_analysis.get('genre_signals', 'N/A')}</p>
@@ -333,7 +347,7 @@ def show_marketability_checker():
         - 📊 **Marketability score** with detailed breakdown
         - ✍️ **Writing quality assessment** (prose, dialogue, voice)
         - 👥 **Character analysis** (main characters and their roles)
-        - 📈 **Plot analysis** (hook, inciting incident, structure)
+        - 📈 **Narrative arc** (exposition, rising action, climax, resolution)
         - 🎯 **Theme identification** and motif analysis
         - 💪 **Key strengths** of your manuscript
         - 🔧 **Areas for improvement** with specific suggestions
@@ -419,15 +433,18 @@ def show_upload_section():
                 if analysis:
                     st.session_state.analysis_result = analysis
                     
-                    # Get book title
-                    book_title = analysis.get('book_info', {}).get('title', 'Your Book')
+                    # Get book title and author
+                    book_info = analysis.get('book_info', {})
+                    book_title = book_info.get('title', 'Your Book')
+                    author_name = book_info.get('author', 'Unknown Author')
                     
                     # Send email
-                    email_sent = send_email(email, analysis, cover_analysis, book_title)
+                    email_sent = send_email(email, analysis, cover_analysis, book_title, author_name)
                     
                     if email_sent:
                         st.session_state.analysis_complete = True
                         st.session_state.book_title = book_title
+                        st.session_state.author_name = author_name
                         st.rerun()
                     else:
                         st.error("Failed to send email. Please try again.")
@@ -446,6 +463,9 @@ def show_results_section():
     marketability = analysis.get('marketability', {})
     overall_score = marketability.get('overall_score', 0)
     overall_grade = marketability.get('overall_grade', 'N/A')
+    book_info = analysis.get('book_info', {})
+    book_title = book_info.get('title', 'Your Book')
+    author_name = book_info.get('author', 'Unknown Author')
     
     # Color based on score
     if overall_score >= 80:
@@ -460,6 +480,14 @@ def show_results_section():
     else:
         bg_color = "linear-gradient(135deg, #ff4b4b 0%, #ff9f4b 100%)"
         emoji = "⚠️"
+    
+    # Show title and author at top
+    st.markdown(f"""
+    <div style="text-align: center; margin-bottom: 20px;">
+        <h2>{book_title}</h2>
+        <h3 style="color: #666;">by {author_name}</h3>
+    </div>
+    """, unsafe_allow_html=True)
     
     # Show score
     st.markdown(f"""
@@ -550,7 +578,7 @@ def analyze_cover(cover_base64):
         return None
 
 def analyze_book_complete(text, cover_analysis):
-    """Complete book analysis (same as your BookAnalyzer)"""
+    """Complete book analysis based on ACTUAL manuscript text"""
     
     if len(text) > 50000:
         text = text[:50000] + "... [truncated]"
@@ -564,91 +592,137 @@ def analyze_book_complete(text, cover_analysis):
     if cover_analysis:
         cover_text = f"\nCOVER ANALYSIS:\n{json.dumps(cover_analysis, indent=2)}"
     
+    # Extract title and author from first few lines
+    first_lines = text[:1000].split('\n')
+    detected_title = "Unknown Title"
+    detected_author = "Unknown Author"
+    
+    for i, line in enumerate(first_lines):
+        line = line.strip()
+        if line and len(line) > 5 and not line.startswith(' ') and not line.startswith('\t'):
+            if i == 0:  # First non-empty line might be title
+                detected_title = line
+            elif i == 1 and 'by' in line.lower():  # Second line might have author
+                detected_author = line.replace('by', '').replace('BY', '').strip()
+            break
+    
+    # Also check for "BY" pattern
+    for i, line in enumerate(first_lines):
+        if 'by' in line.lower() and len(line) < 50:
+            detected_author = line.replace('by', '').replace('BY', '').strip()
+            if i > 0 and first_lines[i-1].strip():
+                detected_title = first_lines[i-1].strip()
+    
     prompt = f"""
-    You are a professional literary analyst. Analyze this book based on the manuscript excerpts provided.
+    You are a professional literary analyst. Analyze THIS SPECIFIC BOOK based SOLELY on the manuscript excerpts provided below.
+    
+    BOOK TITLE (detected from manuscript): {detected_title}
+    AUTHOR (detected from manuscript): {detected_author}
+    
     {cover_text}
     
-    MANUSCRIPT EXCERPTS:
+    ACTUAL MANUSCRIPT EXCERPTS - USE THESE FOR YOUR ANALYSIS:
     
-    BEGINNING:
+    BEGINNING (first 5000 chars):
     {beginning}
     
-    MIDDLE:
+    MIDDLE (middle 5000 chars):
     {middle}
     
-    ENDING:
+    ENDING (last 5000 chars):
     {ending}
     
-    Return JSON with these sections. Make sure each score has a detailed 1-2 sentence explanation:
+    IMPORTANT INSTRUCTIONS:
+    1. The book title MUST be "{detected_title}" in your response
+    2. The author MUST be "{detected_author}" in your response
+    3. Base ALL scores and comments on the ACTUAL text above
+    4. For characters: list EVERY character that appears in these excerpts with their names
+    5. For narrative arc: describe what you actually see in these excerpts
+    6. Be specific - reference actual events, names, and details from the text
+    7. For areas_for_improvement: be honest about weaknesses in THIS text
+    
+    Return JSON with these sections:
     
     {{
         "marketability": {{
-            "overall_score": 85,
-            "overall_grade": "A-",
-            "overall_assessment": "Brief summary based on manuscript quality",
+            "overall_score": (0-100 number based on these excerpts),
+            "overall_grade": ("A", "B", "C", "D", "F" with +/-),
+            "overall_assessment": "One sentence summary of this specific book",
             "scores": {{
-                "writing_quality": {{"score": 88, "explanation": "Detailed 1-2 sentence explanation of the writing quality based on the excerpts", "strengths": [], "weaknesses": []}},
-                "commercial_potential": {{"score": 82, "explanation": "Detailed 1-2 sentence explanation of commercial potential", "strengths": [], "weaknesses": []}},
-                "genre_fit": {{"score": 90, "explanation": "Detailed 1-2 sentence explanation of genre fit", "strengths": [], "weaknesses": []}},
-                "hook_strength": {{"score": 85, "explanation": "Detailed 1-2 sentence explanation of the hook", "strengths": [], "weaknesses": []}},
-                "character_appeal": {{"score": 80, "explanation": "Detailed 1-2 sentence explanation of character appeal", "strengths": [], "weaknesses": []}},
-                "pacing": {{"score": 75, "explanation": "Detailed 1-2 sentence explanation of pacing", "strengths": [], "weaknesses": []}},
-                "originality": {{"score": 70, "explanation": "Detailed 1-2 sentence explanation of originality", "strengths": [], "weaknesses": []}}
+                "writing_quality": {{"score": 0-100, "explanation": "Based on the prose in these excerpts - be specific"}},
+                "commercial_potential": {{"score": 0-100, "explanation": "Based on the hook and content shown"}},
+                "genre_fit": {{"score": 0-100, "explanation": "How well this matches genre conventions"}},
+                "hook_strength": {{"score": 0-100, "explanation": "Based on the opening excerpt"}},
+                "character_appeal": {{"score": 0-100, "explanation": "Based on characters shown in excerpts"}},
+                "pacing": {{"score": 0-100, "explanation": "Based on flow between beginning, middle, and end"}},
+                "originality": {{"score": 0-100, "explanation": "Unique elements observed in these excerpts"}}
             }}
         }},
         
         "writing_quality_detailed": {{
-            "prose_quality": "Assessment of sentence-level writing",
-            "dialogue": "Quality and naturalness of dialogue",
-            "description": "Quality of descriptive passages",
-            "voice": "Strength and consistency of narrative voice",
-            "technical_execution": "Grammar, punctuation, formatting"
+            "prose_quality": "Assessment of sentence-level writing from these excerpts - quote examples",
+            "dialogue": "Quality and naturalness of dialogue from these excerpts - quote examples",
+            "description": "Quality of descriptive passages from these excerpts - quote examples",
+            "voice": "Strength and consistency of narrative voice in these excerpts",
+            "technical_execution": "Grammar, punctuation, formatting in these excerpts"
         }},
         
         "book_info": {{
-            "title": "detected title",
-            "genre": "primary genre",
+            "title": "{detected_title}",
+            "author": "{detected_author}",
+            "genre": "primary genre based on content",
             "subgenres": ["subgenre1", "subgenre2"],
-            "tone": "overall emotional tone",
-            "writing_style": "descriptive/lyrical/direct/etc",
-            "pacing_summary": "fast/medium/slow with explanation"
+            "tone": "overall emotional tone from these excerpts",
+            "writing_style": "descriptive/lyrical/direct/etc from these excerpts",
+            "pacing_summary": "fast/medium/slow based on these excerpts"
         }},
         
         "characters": {{
             "main": [
                 {{
-                    "name": "name",
+                    "name": "character name from excerpts",
                     "role": "protagonist/antagonist/etc",
-                    "description": "who they are",
-                    "arc": "how they change",
-                    "motivation": "what drives them"
+                    "description": "description based on excerpts",
+                    "arc": "how they change (if shown)",
+                    "motivation": "what drives them (if shown)"
                 }}
-            ]
+            ],
+            "supporting": ["list any other characters mentioned"],
+            "total_characters_identified": "number of distinct characters in excerpts"
+        }},
+        
+        "narrative_arc": {{
+            "exposition": "setup shown in beginning excerpt",
+            "rising_action": "events in middle excerpt",
+            "climax": "turning point in excerpts (if any)",
+            "falling_action": "aftermath in ending excerpt (if any)",
+            "resolution": "conclusion shown in ending excerpt"
         }},
         
         "plot": {{
-            "opening_hook": "what grabs attention",
-            "inciting_incident": "what starts the story",
-            "major_plot_points": ["point1", "point2", "point3"]
+            "opening_hook": "what grabs attention in the first 500 chars",
+            "inciting_incident": "what starts the story (if shown)",
+            "major_plot_points": ["point1 from excerpts", "point2 from excerpts"],
+            "plot_twists": ["any surprises in excerpts"]
         }},
         
         "themes": {{
-            "primary": ["main themes with explanation"],
-            "secondary": ["other themes"]
+            "primary": ["main themes visible in excerpts"],
+            "secondary": ["other themes hinted at"]
         }},
         
-        "strengths": ["5 specific strengths of this manuscript with examples from the text"],
+        "strengths": ["5 specific strengths of THIS manuscript with examples from the text"],
         
-        "areas_for_improvement": ["5 specific weaknesses with concrete suggestions for improvement"],
+        "areas_for_improvement": ["5 specific weaknesses in THIS manuscript with concrete suggestions based on the text"],
         
         "target_audience": {{
-            "primary": "who will love this",
-            "appeal": "why they'll love it"
+            "primary": "who would enjoy THIS specific book",
+            "appeal": "why they'd enjoy it based on these excerpts"
         }},
         
         "marketing": {{
-            "unique_selling_points": ["what makes it special"],
-            "blurb_suggestion": "A potential back-cover blurb based on the content"
+            "unique_selling_points": ["what makes THIS specific book special based on excerpts"],
+            "blurb_suggestion": "A potential back-cover blurb based on THIS content"
         }}
     }}
     """
@@ -657,7 +731,7 @@ def analyze_book_complete(text, cover_analysis):
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You are a literary analyst. Return valid JSON only."},
+                {"role": "system", "content": "You are a literary analyst. Return valid JSON only. Base your analysis strictly on the provided excerpts."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.4,
@@ -665,7 +739,15 @@ def analyze_book_complete(text, cover_analysis):
             response_format={"type": "json_object"}
         )
         
-        return json.loads(response.choices[0].message.content)
+        result = json.loads(response.choices[0].message.content)
+        
+        # Ensure title and author are set
+        if 'book_info' not in result:
+            result['book_info'] = {}
+        result['book_info']['title'] = detected_title
+        result['book_info']['author'] = detected_author
+        
+        return result
         
     except Exception as e:
         st.error(f"Analysis failed: {str(e)}")
