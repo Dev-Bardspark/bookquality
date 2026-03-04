@@ -1,6 +1,6 @@
 # BookMarketabilityChecker.py - STANDALONE FOR WEBSITE
 import streamlit as st
-from openai import OpenAI
+import openai  # Changed this
 import PyPDF2
 import docx
 import json
@@ -8,8 +8,8 @@ import base64
 from PIL import Image
 import io
 
-# Initialize OpenAI with secrets
-client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+# Initialize OpenAI with secrets - FIXED
+client = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 def show_marketability_checker():
     """Simple marketability checker for website homepage"""
