@@ -1,15 +1,115 @@
-# BookMarketabilityChecker.py - STANDALONE FOR WEBSITE
+# BookMarketabilityChecker.py - WITH EMAIL AND FULL ANALYSIS
 import streamlit as st
-import openai  # Changed this
+import openai
 import PyPDF2
 import docx
 import json
 import base64
 from PIL import Image
 import io
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from datetime import datetime
 
-# Initialize OpenAI with secrets - FIXED
+# Initialize OpenAI with secrets
 client = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+
+# Email config from secrets
+SMTP_SERVER = st.secrets["SMTP_SERVER"]
+SMTP_PORT = st.secrets["SMTP_PORT"]
+SENDER_EMAIL = st.secrets["SENDER_EMAIL"]
+SENDER_PASSWORD = st.secrets["SENDER_PASSWORD"]
+USE_TLS = st.secrets.get("use_tls", True)
+
+def send_email(recipient_email, analysis_results, cover_analysis, book_title):
+    """Send analysis results via email"""
+    
+    subject = f"Your Book Marketability Score: {book_title}"
+    
+    # Format the email body
+    marketability = analysis_results.get('marketability', {})
+    score = marketability.get('overall_score', 'N/A')
+    grade = marketability.get('overall_grade', 'N/A')
+    
+    body = f"""
+    <html>
+    <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; border-radius: 10px; color: white; text-align: center;">
+            <h1>Your Book Marketability Score: {score} ({grade})</h1>
+        </div>
+        
+        <div style="padding: 20px; background: #f8f9fa; border-radius: 10px; margin-top: 20px;">
+            <h2>📊 Quick Overview</h2>
+            <p>{marketability.get('overall_assessment', '')}</p>
+        </div>
+        
+        <div style="padding: 20px; margin-top: 20px;">
+            <h2>📈 Detailed Scores</h2>
+    """
+    
+    # Add scores
+    scores = marketability.get('scores', {})
+    for score_name, score_data in scores.items():
+        display_name = score_name.replace('_', ' ').title()
+        score_value = score_data.get('score', 0)
+        explanation = score_data.get('explanation', '')
+        body += f"""
+            <div style="margin-bottom: 15px;">
+                <div style="display: flex; justify-content: space-between;">
+                    <strong>{display_name}</strong> <span>{score_value}</span>
+                </div>
+                <div style="height: 8px; background: #eee; border-radius: 4px;">
+                    <div style="width: {score_value}%; height: 8px; background: #667eea; border-radius: 4px;"></div>
+                </div>
+                <p style="color: #666; font-size: 14px;">{explanation}</p>
+            </div>
+        """
+    
+    # Add cover analysis if available
+    if cover_analysis:
+        body += f"""
+        <div style="padding: 20px; background: #f8f9fa; border-radius: 10px; margin-top: 20px;">
+            <h2>🎨 Cover Analysis</h2>
+            <p><strong>Mood:</strong> {cover_analysis.get('mood', 'N/A')}</p>
+            <p><strong>Genre Signals:</strong> {cover_analysis.get('genre_signals', 'N/A')}</p>
+            <p><strong>Strengths:</strong> {', '.join(cover_analysis.get('strengths', ['N/A']))}</p>
+            <p><strong>Weaknesses:</strong> {', '.join(cover_analysis.get('weaknesses', ['N/A']))}</p>
+        </div>
+        """
+    
+    # Call to action
+    body += f"""
+        <div style="padding: 30px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; margin-top: 20px; color: white; text-align: center;">
+            <h2>✨ Want the complete analysis?</h2>
+            <p>Get full literary analysis, competitor comparison, and custom marketing plan.</p>
+            <a href="https://yourapp.com/signup" style="background: white; color: #667eea; padding: 12px 30px; text-decoration: none; border-radius: 25px; font-weight: bold; display: inline-block; margin-top: 10px;">SIGN UP FOR FULL ACCESS</a>
+        </div>
+        
+        <p style="color: #999; font-size: 12px; text-align: center; margin-top: 30px;">
+            Analysis performed on {datetime.now().strftime('%B %d, %Y')}
+        </p>
+    </body>
+    </html>
+    """
+    
+    try:
+        msg = MIMEMultipart()
+        msg['From'] = SENDER_EMAIL
+        msg['To'] = recipient_email
+        msg['Subject'] = subject
+        msg.attach(MIMEText(body, 'html'))
+        
+        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+        if USE_TLS:
+            server.starttls()
+        server.login(SENDER_EMAIL, SENDER_PASSWORD)
+        server.send_message(msg)
+        server.quit()
+        return True
+    except Exception as e:
+        st.error(f"Email sending failed: {e}")
+        return False
 
 def show_marketability_checker():
     """Simple marketability checker for website homepage"""
@@ -20,7 +120,7 @@ def show_marketability_checker():
         layout="centered"
     )
     
-    # Custom CSS for branding
+    # Custom CSS
     st.markdown("""
     <style>
         .main-header {
@@ -49,32 +149,12 @@ def show_marketability_checker():
             font-size: 24px;
             margin: 0;
         }
-        .cta-button {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 1rem 2rem;
-            border-radius: 50px;
-            text-align: center;
-            text-decoration: none;
-            display: inline-block;
-            font-weight: bold;
-            margin: 1rem 0;
-            border: none;
-            width: 100%;
-        }
         .feature-box {
             padding: 1.5rem;
             background: #f8f9fa;
             border-radius: 10px;
             margin: 1rem 0;
             border-left: 4px solid #667eea;
-        }
-        .results-box {
-            padding: 2rem;
-            background: white;
-            border-radius: 10px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            margin: 2rem 0;
         }
         .signup-prompt {
             text-align: center;
@@ -83,6 +163,13 @@ def show_marketability_checker():
             color: white;
             border-radius: 10px;
             margin: 2rem 0;
+        }
+        .email-box {
+            padding: 2rem;
+            background: #f0f2f6;
+            border-radius: 10px;
+            margin: 2rem 0;
+            border: 2px solid #667eea;
         }
     </style>
     """, unsafe_allow_html=True)
@@ -100,6 +187,8 @@ def show_marketability_checker():
         st.session_state.analysis_result = None
     if 'cover_analysis' not in st.session_state:
         st.session_state.cover_analysis = None
+    if 'email_sent' not in st.session_state:
+        st.session_state.email_sent = False
     
     # Show upload section if no analysis yet
     if not st.session_state.analysis_result:
@@ -112,15 +201,22 @@ def show_upload_section():
     
     st.markdown("""
     <div class="feature-box">
-        <h3>📤 Upload your manuscript and cover</h3>
-        <p>We'll analyze the first few pages to give you an honest marketability score.</p>
+        <h3>📤 Upload your manuscript</h3>
+        <p>We'll analyze your book and email you the results.</p>
     </div>
     """, unsafe_allow_html=True)
+    
+    # Analysis depth option
+    analysis_depth = st.radio(
+        "How much of your manuscript should we analyze?",
+        ["Quick scan (first 3 pages) - FREE", "Deep analysis (full manuscript) - $0.50"],
+        index=0
+    )
     
     col1, col2 = st.columns(2)
     
     with col1:
-        st.markdown("**📄 Manuscript**")
+        st.markdown("**📄 Manuscript (required)**")
         manuscript = st.file_uploader(
             "Upload PDF, DOCX, or TXT",
             type=['pdf', 'docx', 'txt'],
@@ -131,9 +227,9 @@ def show_upload_section():
             st.success(f"✅ {manuscript.name}")
     
     with col2:
-        st.markdown("**🎨 Cover Image**")
+        st.markdown("**🎨 Cover Image (optional)**")
         cover = st.file_uploader(
-            "Upload JPG or PNG",
+            "Upload JPG or PNG (optional)",
             type=['jpg', 'jpeg', 'png'],
             key="cover",
             label_visibility="collapsed"
@@ -143,61 +239,83 @@ def show_upload_section():
             image = Image.open(cover)
             st.image(image, width=100)
     
+    # Email input
+    st.markdown("---")
+    st.markdown("### 📧 Where should we send your results?")
+    
+    email = st.text_input("Email address", placeholder="you@example.com")
+    
     st.markdown("---")
     
-    if manuscript and cover:
+    if manuscript and email:
+        # Show cost if deep analysis selected
+        if "Deep analysis" in analysis_depth:
+            st.info("💰 Deep analysis cost: $0.50 (charged to your OpenAI account)")
+        
         if st.button("🔍 GET MY MARKETABILITY SCORE", type="primary", use_container_width=True):
-            with st.spinner("Analyzing your book... (about 45 seconds)"):
+            with st.spinner("Analyzing your book... (this may take 1-2 minutes)"):
                 
-                # Extract text (first 5000 chars only for speed)
-                text = extract_text_sample(manuscript, max_chars=5000)
+                # Extract text based on depth
+                if "Quick scan" in analysis_depth:
+                    text = extract_text_sample(manuscript, max_chars=5000, pages=3)
+                else:
+                    text = extract_text_full(manuscript)
                 
-                # Process cover
-                cover_bytes = cover.getvalue()
-                cover_base64 = base64.b64encode(cover_bytes).decode('utf-8')
+                # Process cover if provided
+                cover_analysis = None
+                if cover:
+                    cover_bytes = cover.getvalue()
+                    cover_base64 = base64.b64encode(cover_bytes).decode('utf-8')
+                    cover_analysis = analyze_cover_simple(cover_base64)
+                    st.session_state.cover_analysis = cover_analysis
                 
-                # Analyze cover
-                cover_analysis = analyze_cover_simple(cover_base64)
-                st.session_state.cover_analysis = cover_analysis
-                
-                # Analyze manuscript for marketability ONLY
+                # Analyze manuscript
                 analysis = analyze_marketability(text, cover_analysis)
                 
-                st.session_state.analysis_result = analysis
-                st.rerun()
+                # Get book title
+                book_title = analysis.get('book_info', {}).get('title', 'Your Book')
+                
+                # Send email
+                email_sent = send_email(email, analysis, cover_analysis, book_title)
+                
+                if email_sent:
+                    st.session_state.analysis_result = analysis
+                    st.session_state.email_sent = True
+                    st.rerun()
+                else:
+                    st.error("Failed to send email. Please try again.")
     else:
-        st.info("👆 Please upload both manuscript and cover to continue")
+        if not manuscript:
+            st.info("👆 Please upload your manuscript")
+        elif not email:
+            st.info("👆 Please enter your email address")
 
 def show_results_section():
-    """Show marketability results with call-to-action"""
+    """Show success message and preview"""
     
+    st.success("✅ Analysis complete! Check your email for the full results.")
+    
+    # Show preview
     analysis = st.session_state.analysis_result
-    
-    # Extract marketability data
     marketability = analysis.get('marketability', {})
     overall_score = marketability.get('overall_score', 0)
     overall_grade = marketability.get('overall_grade', 'N/A')
-    overall_assessment = marketability.get('overall_assessment', '')
     
     # Color based on score
     if overall_score >= 80:
         bg_color = "linear-gradient(135deg, #00b09b 0%, #96c93d 100%)"
         emoji = "🚀"
-        message = "Your book has EXCELLENT marketability potential!"
     elif overall_score >= 70:
         bg_color = "linear-gradient(135deg, #f7971e 0%, #ffd200 100%)"
         emoji = "📈"
-        message = "Your book has GOOD marketability potential!"
     elif overall_score >= 60:
         bg_color = "linear-gradient(135deg, #ff6b6b 0%, #feca57 100%)"
         emoji = "📊"
-        message = "Your book has FAIR marketability potential."
     else:
         bg_color = "linear-gradient(135deg, #ff4b4b 0%, #ff9f4b 100%)"
         emoji = "⚠️"
-        message = "Your book NEEDS WORK before marketing."
     
-    # Show score prominently
+    # Show score
     st.markdown(f"""
     <div class="score-box" style="background: {bg_color};">
         <p class="score-number">{overall_score}</p>
@@ -206,78 +324,29 @@ def show_results_section():
     </div>
     """, unsafe_allow_html=True)
     
-    st.markdown(f"**{message}**")
-    st.markdown(f"*{overall_assessment}*")
-    
-    st.markdown("---")
-    
-    # Show quick breakdown
-    st.markdown("### 📊 Quick Breakdown")
-    
-    scores = marketability.get('scores', {})
-    if scores:
-        col1, col2 = st.columns(2)
-        
-        score_items = list(scores.items())[:6]  # Show first 6 scores
-        for i, (score_name, score_data) in enumerate(score_items):
-            display_name = score_name.replace('_', ' ').title()
-            score_value = score_data.get('score', 0)
-            
-            with col1 if i % 2 == 0 else col2:
-                st.markdown(f"""
-                <div style="margin-bottom: 15px;">
-                    <div style="display: flex; justify-content: space-between;">
-                        <span>{display_name}</span>
-                        <span style="font-weight: bold;">{score_value}</span>
-                    </div>
-                    <div style="height: 6px; background: #eee; border-radius: 3px;">
-                        <div style="width: {score_value}%; height: 6px; background: #667eea; border-radius: 3px;"></div>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-    
-    st.markdown("---")
-    
-    # Cover analysis summary
-    if st.session_state.cover_analysis:
-        cover = st.session_state.cover_analysis
-        st.markdown("### 🎨 Cover Insights")
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown("**Strengths**")
-            for s in cover.get('strengths', [])[:2]:
-                st.write(f"✅ {s}")
-        with col2:
-            st.markdown("**Weaknesses**")
-            for w in cover.get('weaknesses', [])[:2]:
-                st.write(f"⚠️ {w}")
-    
-    st.markdown("---")
-    
-    # Call to action - SIGN UP FOR FULL ACCESS
+    # Call to action
     st.markdown("""
     <div class="signup-prompt">
-        <h2>✨ Want the complete analysis?</h2>
-        <p style="font-size: 18px;">Get access to:</p>
-        <p>📖 Full literary analysis</p>
-        <p>🎨 Detailed cover feedback</p>
+        <h2>✨ Want more detailed insights?</h2>
+        <p style="font-size: 18px;">Sign up for full access to:</p>
+        <p>📖 Complete literary analysis</p>
+        <p>🎨 Professional cover feedback</p>
         <p>📈 Competitor comparison</p>
-        <p>🎯 Target audience insights</p>
+        <p>🎯 Target audience breakdown</p>
         <p>📋 Custom marketing plan</p>
     </div>
     """, unsafe_allow_html=True)
     
     col1, col2, col3 = st.columns(3)
     with col2:
-        if st.button("🚀 SIGN UP FOR FULL ACCESS", type="primary", use_container_width=True):
-            # Link to your main app signup
+        if st.button("🚀 SIGN UP NOW", type="primary", use_container_width=True):
             st.markdown("[Click here to sign up](https://yourapp.com)")
     
-    # Option to try another book
+    # Analyze another
     if st.button("🔄 Analyze Another Book", use_container_width=True):
         st.session_state.analysis_result = None
         st.session_state.cover_analysis = None
+        st.session_state.email_sent = False
         st.rerun()
 
 def analyze_cover_simple(cover_base64):
@@ -290,7 +359,8 @@ def analyze_cover_simple(cover_base64):
         "mood": "emotional feeling",
         "genre_signals": "what genre this suggests",
         "strengths": ["2 specific strengths"],
-        "weaknesses": ["2 specific weaknesses"]
+        "weaknesses": ["2 specific weaknesses"],
+        "suggestions": ["2 quick improvements"]
     }"""
     
     try:
@@ -317,26 +387,21 @@ def analyze_cover_simple(cover_base64):
         
         return json.loads(response.choices[0].message.content)
     except:
-        return {
-            "colors": ["Unable to analyze"],
-            "has_figure": False,
-            "mood": "Unknown",
-            "genre_signals": "Unknown",
-            "strengths": ["Try again"],
-            "weaknesses": ["Image may be invalid"]
-        }
+        return None
 
 def analyze_marketability(text, cover_analysis):
-    """Simple marketability-only analysis"""
+    """Marketability analysis"""
+    
+    cover_text = ""
+    if cover_analysis:
+        cover_text = f"\nCOVER ANALYSIS:\n{json.dumps(cover_analysis, indent=2)}"
     
     prompt = f"""
-    Based on this manuscript excerpt and cover, provide a marketability analysis.
-    
-    COVER ANALYSIS:
-    {json.dumps(cover_analysis, indent=2)}
+    Based on this manuscript excerpt, provide a marketability analysis.
+    {cover_text}
     
     MANUSCRIPT EXCERPT:
-    {text[:3000]}
+    {text[:5000]}
     
     Return JSON with:
     
@@ -350,8 +415,7 @@ def analyze_marketability(text, cover_analysis):
                 "commercial_potential": {{"score": 0-100, "explanation": "brief"}},
                 "genre_fit": {{"score": 0-100, "explanation": "brief"}},
                 "hook_strength": {{"score": 0-100, "explanation": "brief"}},
-                "character_appeal": {{"score": 0-100, "explanation": "brief"}},
-                "cover_effectiveness": {{"score": 0-100, "explanation": "brief"}}
+                "character_appeal": {{"score": 0-100, "explanation": "brief"}}
             }}
         }},
         
@@ -392,26 +456,50 @@ def analyze_marketability(text, cover_analysis):
             }
         }
 
-def extract_text_sample(file, max_chars=5000):
-    """Extract first part of text from uploaded file"""
+def extract_text_sample(file, max_chars=5000, pages=3):
+    """Extract first few pages"""
     try:
         if file.type == "application/pdf":
             pdf_reader = PyPDF2.PdfReader(file)
             text = ""
-            for page in pdf_reader.pages[:3]:  # First 3 pages only
+            for page in pdf_reader.pages[:pages]:
                 text += page.extract_text()
             return text[:max_chars]
             
         elif file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
             doc = docx.Document(file)
             text = ""
-            for para in doc.paragraphs[:50]:  # First 50 paragraphs
+            for para in doc.paragraphs[:pages*10]:  # Approx 10 paragraphs per page
                 text += para.text + "\n"
             return text[:max_chars]
             
         else:  # txt
             text = file.getvalue().decode("utf-8")
             return text[:max_chars]
+            
+    except Exception as e:
+        return f"Error extracting text: {str(e)}"
+
+def extract_text_full(file):
+    """Extract entire manuscript"""
+    try:
+        if file.type == "application/pdf":
+            pdf_reader = PyPDF2.PdfReader(file)
+            text = ""
+            for page in pdf_reader.pages:
+                text += page.extract_text()
+            return text[:50000]  # Still cap at 50k chars for API limits
+            
+        elif file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+            doc = docx.Document(file)
+            text = ""
+            for para in doc.paragraphs:
+                text += para.text + "\n"
+            return text[:50000]
+            
+        else:  # txt
+            text = file.getvalue().decode("utf-8")
+            return text[:50000]
             
     except Exception as e:
         return f"Error extracting text: {str(e)}"
