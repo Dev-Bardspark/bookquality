@@ -1,4 +1,4 @@
-# BookMarketabilityChecker.py - COMPLETE FIXED VERSION
+# BookMarketabilityChecker.py - FINAL WORKING VERSION
 import streamlit as st
 import openai
 import PyPDF2
@@ -54,11 +54,9 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
     # Different message based on score
     if score >= 70:
         next_steps = "✅ Your book is ready for marketing! Click below to get started with BardSpark."
-        cta_text = "START MARKETING YOUR BOOK"
         cta_color = "#00cc66"
     else:
         next_steps = "📝 Your book needs more work before marketing. We've included detailed feedback below."
-        cta_text = "GET EDITING RESOURCES"
         cta_color = "#ff8800"
     
     # Build email body
@@ -112,7 +110,6 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
         score_value = score_data.get('score', 0)
         explanation = score_data.get('explanation', '')
         
-        # Color code the bar
         if score_value >= 80:
             bar_color = "#00cc66"
         elif score_value >= 70:
@@ -223,17 +220,12 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
         </div>
     """
     
-    # Call to action - different based on score
+    # Call to action
     if score >= 70:
         body += f"""
         <div style="padding: 30px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; margin-top: 20px; color: white; text-align: center;">
             <h2>✨ Your book is ready for marketing!</h2>
-            <p style="font-size: 18px;">Sign up for BardSpark to access:</p>
-            <p>🔍 ARC reader & influencer finder</p>
-            <p>🎨 Marketing asset generator</p>
-            <p>📊 Competitor tracker</p>
-            <p>🎬 BookTok video creator</p>
-            <p>🌐 Author website builder</p>
+            <p style="font-size: 18px;">Sign up for BardSpark to access all our marketing tools.</p>
             <a href="https://yourapp.com/signup" style="background: white; color: #667eea; padding: 12px 30px; text-decoration: none; border-radius: 25px; font-weight: bold; display: inline-block; margin-top: 10px;">START MARKETING NOW</a>
         </div>
         """
@@ -241,14 +233,8 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
         body += f"""
         <div style="padding: 30px; background: #ff8800; border-radius: 10px; margin-top: 20px; color: white; text-align: center;">
             <h2>📝 Your book needs work before marketing</h2>
-            <p style="font-size: 18px;">We recommend focusing on:</p>
-            <ul style="text-align: left; display: inline-block;">
-                <li>Addressing the areas for improvement above</li>
-                <li>Getting professional editing</li>
-                <li>Beta reader feedback</li>
-                <li>Structural revisions</li>
-            </ul>
-            <p style="margin-top: 20px;">Come back when your book scores 70+!</p>
+            <p>Focus on the areas for improvement above.</p>
+            <p>Come back when your book scores 70+!</p>
         </div>
         """
     
@@ -279,7 +265,7 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
         return False
 
 def show_marketability_checker():
-    """Marketability checker that filters bad books"""
+    """Main app"""
     
     st.set_page_config(
         page_title="Free Book Analysis",
@@ -287,7 +273,6 @@ def show_marketability_checker():
         layout="centered"
     )
     
-    # Custom CSS
     st.markdown("""
     <style>
         .main-header {
@@ -298,38 +283,6 @@ def show_marketability_checker():
             border-radius: 10px;
             margin-bottom: 2rem;
         }
-        .feature-box {
-            padding: 1.5rem;
-            background: #f8f9fa;
-            border-radius: 10px;
-            margin: 1rem 0;
-            border-left: 4px solid #667eea;
-        }
-        .warning-box {
-            padding: 1.5rem;
-            background: #fff3cd;
-            border: 1px solid #ffc107;
-            border-radius: 10px;
-            margin: 1.5rem 0;
-            border-left: 5px solid #ff8800;
-        }
-        .score-box {
-            text-align: center;
-            padding: 2rem;
-            border-radius: 15px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-            margin: 2rem 0;
-            color: white;
-        }
-        .score-number {
-            font-size: 72px;
-            font-weight: bold;
-            margin: 0;
-        }
-        .score-label {
-            font-size: 24px;
-            margin: 0;
-        }
         .filter-message {
             text-align: center;
             padding: 1.5rem;
@@ -337,14 +290,6 @@ def show_marketability_checker():
             border-radius: 10px;
             margin: 1rem 0;
             border-left: 5px solid #667eea;
-            font-size: 16px;
-        }
-        .word-count-box {
-            padding: 1rem;
-            background: #e1f5fe;
-            border-radius: 10px;
-            margin: 1rem 0;
-            border-left: 4px solid #03a9f4;
         }
         .success-message {
             text-align: center;
@@ -352,374 +297,217 @@ def show_marketability_checker():
             background: #d4edda;
             border-radius: 10px;
             margin: 2rem 0;
-            border-left: 5px solid #28a745;
         }
     </style>
     """, unsafe_allow_html=True)
     
-    # Header
     st.markdown("""
     <div class="main-header">
         <h1>📊 Free Book Analysis</h1>
-        <p>Get your COMPLETE book analysis emailed to you in 60 seconds</p>
+        <p>Get your complete analysis emailed in 60 seconds</p>
     </div>
     """, unsafe_allow_html=True)
     
-    # Filter message
     st.markdown("""
     <div class="filter-message">
-        <strong>📊 The Hard Truth:</strong> Most books sell less than 100 copies, no matter how much effort you put into marketing.<br>
+        <strong>📊 The Hard Truth:</strong> Most books sell less than 100 copies.<br>
         <strong>A bad book will never sell.</strong><br><br>
-        This is why we ONLY accept books with a marketability score of <strong>70+ into BardSpark</strong>.<br>
-        If your book scores lower, we'll tell you exactly what needs work.
+        We only accept books scoring 70+ into BardSpark.
     </div>
     """, unsafe_allow_html=True)
     
-    # Word count info
-    st.markdown("""
-    <div class="word-count-box">
-        <strong>📏 Word Count Guide:</strong> For most genres, target 70,000-100,000 words for publication.<br>
-        <em>(If you're testing an unfinished manuscript, that's fine - we'll still analyze it!)</em>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # What they get
-    with st.expander("📋 What's included in your free analysis", expanded=True):
-        st.markdown("""
-        - 📖 **Full book analysis** (genre, tone, writing style, pacing)
-        - 📊 **Marketability score** with detailed breakdown
-        - ✍️ **Writing quality assessment** (prose, dialogue, voice)
-        - 👥 **Character analysis** (main characters and their roles)
-        - 📈 **Narrative arc** (exposition, rising action, climax, resolution)
-        - 🎯 **Theme identification** and motif analysis
-        - 💪 **Key strengths** of your manuscript
-        - 🔧 **Areas for improvement** with specific suggestions
-        - 🎨 **Cover analysis** (if you upload it)
-        - 📏 **Word count analysis** with genre-specific guidance
-        """)
-    
-    st.markdown("---")
-    
-    # Initialize session state
     if 'analysis_complete' not in st.session_state:
         st.session_state.analysis_complete = False
-    if 'analysis_result' not in st.session_state:
-        st.session_state.analysis_result = None
-    if 'cover_analysis' not in st.session_state:
-        st.session_state.cover_analysis = None
-    if 'word_count' not in st.session_state:
-        st.session_state.word_count = 0
-    if 'email_sent' not in st.session_state:
-        st.session_state.email_sent = False
     
     if not st.session_state.analysis_complete:
-        show_upload_section()
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("**📄 Manuscript**")
+            manuscript = st.file_uploader(
+                "Upload PDF, DOCX, or TXT",
+                type=['pdf', 'docx', 'txt'],
+                key="manuscript",
+                label_visibility="collapsed"
+            )
+        
+        with col2:
+            st.markdown("**🎨 Cover (optional)**")
+            cover = st.file_uploader(
+                "Upload JPG or PNG",
+                type=['jpg', 'jpeg', 'png'],
+                key="cover",
+                label_visibility="collapsed"
+            )
+            if cover:
+                st.image(Image.open(cover), width=100)
+        
+        st.markdown("---")
+        email = st.text_input("📧 Your email address", placeholder="you@example.com")
+        st.markdown("<p style='font-size:12px; color:#666;'>We'll never spam you.</p>", unsafe_allow_html=True)
+        
+        if manuscript and email:
+            if st.button("🔍 GET MY FREE ANALYSIS", type="primary", use_container_width=True):
+                with st.spinner("Analyzing your book... (60 seconds)"):
+                    
+                    text = extract_text_full(manuscript)
+                    word_count = count_words(text)
+                    
+                    cover_analysis = None
+                    if cover:
+                        cover_bytes = cover.getvalue()
+                        cover_base64 = base64.b64encode(cover_bytes).decode('utf-8')
+                        cover_analysis = analyze_cover(cover_base64)
+                    
+                    analysis = analyze_book_complete(text, cover_analysis, word_count)
+                    
+                    if analysis:
+                        book_info = analysis.get('book_info', {})
+                        book_title = book_info.get('title', 'Your Book')
+                        author_name = book_info.get('author', 'Unknown Author')
+                        
+                        if send_email(email, analysis, cover_analysis, book_title, author_name, word_count):
+                            st.session_state.analysis_complete = True
+                            st.session_state.book_title = book_title
+                            st.session_state.author_name = author_name
+                            st.rerun()
+        else:
+            if not manuscript:
+                st.info("👆 Upload your manuscript")
+            elif not email:
+                st.info("👆 Enter your email")
     else:
-        show_success_section()
-
-def show_upload_section():
-    """Show file upload interface"""
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("**📄 Manuscript (required)**")
-        manuscript = st.file_uploader(
-            "Upload PDF, DOCX, or TXT",
-            type=['pdf', 'docx', 'txt'],
-            key="manuscript",
-            label_visibility="collapsed"
-        )
-        if manuscript:
-            file_size = len(manuscript.getvalue()) / 1024
-            st.success(f"✅ {manuscript.name} ({file_size:.0f} KB)")
-    
-    with col2:
-        st.markdown("**🎨 Cover Image (optional but recommended)**")
-        cover = st.file_uploader(
-            "Upload JPG or PNG",
-            type=['jpg', 'jpeg', 'png'],
-            key="cover",
-            label_visibility="collapsed"
-        )
-        if cover:
-            st.success(f"✅ {cover.name}")
-            image = Image.open(cover)
-            st.image(image, width=100)
-    
-    st.markdown("---")
-    st.markdown("### 📧 Where should we send your complete analysis?")
-    
-    email = st.text_input("Email address", placeholder="you@example.com")
-    
-    st.markdown("""
-    <p style="font-size: 12px; color: #666; margin-top: -10px; margin-bottom: 20px;">
-        We'll never spam you. Just this one analysis.
-    </p>
-    """, unsafe_allow_html=True)
-    
-    if manuscript and email:
-        if st.button("🔍 GET MY FREE ANALYSIS", type="primary", use_container_width=True):
-            with st.spinner("Analyzing your book... (about 60 seconds)"):
-                
-                # Extract full manuscript
-                text = extract_text_full(manuscript)
-                
-                # Count words
-                word_count = count_words(text)
-                st.session_state.word_count = word_count
-                
-                # Process cover if provided
-                cover_analysis = None
-                if cover:
-                    cover_bytes = cover.getvalue()
-                    cover_base64 = base64.b64encode(cover_bytes).decode('utf-8')
-                    cover_analysis = analyze_cover(cover_base64)
-                    st.session_state.cover_analysis = cover_analysis
-                
-                # Analyze manuscript
-                analysis = analyze_book_complete(text, cover_analysis, word_count)
-                
-                if analysis:
-                    st.session_state.analysis_result = analysis
-                    
-                    # Get book title and author
-                    book_info = analysis.get('book_info', {})
-                    book_title = book_info.get('title', 'Your Book')
-                    author_name = book_info.get('author', 'Unknown Author')
-                    
-                    # SEND EMAIL
-                    email_sent = send_email(email, analysis, cover_analysis, book_title, author_name, word_count)
-                    
-                    if email_sent:
-                        st.session_state.analysis_complete = True
-                        st.session_state.book_title = book_title
-                        st.session_state.author_name = author_name
-                        st.session_state.email_sent = True
-                        st.rerun()
-                    else:
-                        st.error("Failed to send email. Please check your email settings and try again.")
-                else:
-                    st.error("Analysis failed. Please try again.")
-    else:
-        if not manuscript:
-            st.info("👆 Please upload your manuscript")
-        elif not email:
-            st.info("👆 Please enter your email address")
-
-def show_success_section():
-    """Show success message only - NO RESULTS DISPLAYED"""
-    
-    st.markdown(f"""
-    <div class="success-message">
-        <h2>✅ Analysis Complete!</h2>
-        <p style="font-size: 18px;">We've sent your complete analysis to your email.</p>
-        <p>Book: <strong>{st.session_state.book_title}</strong> by <strong>{st.session_state.author_name}</strong></p>
-        <p>Word Count: {st.session_state.word_count:,}</p>
-        <p style="margin-top: 20px;">📧 Check your inbox (and spam folder)</p>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    if st.button("🔄 Analyze Another Book", use_container_width=True):
-        st.session_state.analysis_complete = False
-        st.session_state.analysis_result = None
-        st.session_state.cover_analysis = None
-        st.session_state.email_sent = False
-        st.rerun()
+        st.markdown(f"""
+        <div class="success-message">
+            <h2>✅ Analysis Complete!</h2>
+            <p>Sent to your email: <strong>{st.session_state.book_title}</strong> by <strong>{st.session_state.author_name}</strong></p>
+            <p>📧 Check your inbox (and spam)</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        if st.button("🔄 Analyze Another Book"):
+            st.session_state.analysis_complete = False
+            st.rerun()
 
 def analyze_cover(cover_base64):
-    """Full cover analysis"""
-    
-    prompt = """Analyze this book cover in detail. Return JSON with:
+    """Cover analysis"""
+    prompt = """Analyze this book cover. Return JSON with:
     {
-        "colors": ["list of dominant colors"],
-        "has_figure": true/false,
-        "figure_description": "description if any figures present",
-        "typography": "description of font style",
-        "composition": "how elements are arranged",
-        "mood": "emotional feeling",
-        "genre_signals": "what genre this suggests",
-        "strengths": ["3 specific strengths"],
-        "weaknesses": ["3 specific weaknesses"],
-        "suggestions": ["3 improvements"]
+        "colors": ["colors"],
+        "mood": "feeling",
+        "genre_signals": "genre",
+        "strengths": ["strengths"],
+        "weaknesses": ["weaknesses"]
     }"""
     
     try:
         response = client.chat.completions.create(
             model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{cover_base64}"
-                            }
-                        }
-                    ]
-                }
-            ],
-            max_tokens=1000,
-            temperature=0.3,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{cover_base64}"}}
+                ]
+            }],
+            max_tokens=500,
             response_format={"type": "json_object"}
         )
-        
         return json.loads(response.choices[0].message.content)
     except:
         return None
 
 def analyze_book_complete(text, cover_analysis, word_count):
-    """Complete book analysis with calibrated scoring"""
+    """Complete book analysis with clear scoring anchors"""
     
     if len(text) > 50000:
-        text = text[:50000] + "... [truncated]"
+        text = text[:50000]
     
-    total_len = len(text)
-    beginning = text[:min(5000, total_len//3)]
-    middle = text[total_len//3:total_len//3*2][:5000]
-    ending = text[-5000:]
+    # Extract title and author
+    first_lines = text[:500].split('\n')
+    title = "Unknown Title"
+    author = "Unknown Author"
     
-    cover_text = ""
-    if cover_analysis:
-        cover_text = f"\nCOVER ANALYSIS:\n{json.dumps(cover_analysis, indent=2)}"
-    
-    # Extract title and author from first few lines
-    first_lines = text[:1000].split('\n')
-    detected_title = "Unknown Title"
-    detected_author = "Unknown Author"
-    
-    for i, line in enumerate(first_lines):
-        line = line.strip()
-        if line and len(line) > 5 and not line.startswith(' ') and not line.startswith('\t'):
-            if i == 0:
-                detected_title = line
-            elif i == 1 and ('by' in line.lower() or 'BY' in line):
-                detected_author = line.replace('by', '').replace('BY', '').strip()
-            break
-    
-    for i, line in enumerate(first_lines):
+    for line in first_lines:
         if 'by' in line.lower() and len(line) < 50:
-            detected_author = line.replace('by', '').replace('BY', '').strip()
-            if i > 0 and first_lines[i-1].strip():
-                detected_title = first_lines[i-1].strip()
+            author = line.replace('by', '').replace('BY', '').strip()
+        elif line.strip() and len(line) > 3 and title == "Unknown Title":
+            title = line.strip()
     
-    word_count_note = ""
-    if word_count < 70000:
-        word_count_note = f"Note: This manuscript is {word_count} words, which is below the typical 70,000-100,000 range for publication."
-    elif word_count > 100000:
-        word_count_note = f"Note: This manuscript is {word_count} words, which is above the typical 70,000-100,000 range for publication."
+    # Get excerpts
+    total_len = len(text)
+    beginning = text[:min(4000, total_len//3)]
+    middle = text[total_len//3:total_len//3*2][:4000] if total_len > 10000 else ""
+    ending = text[-4000:] if total_len > 5000 else ""
+    
+    cover_text = f"\nCOVER ANALYSIS:\n{json.dumps(cover_analysis)}" if cover_analysis else ""
     
     prompt = f"""
-    You are a professional literary analyst. Analyze THIS SPECIFIC BOOK based SOLELY on the manuscript excerpts provided below.
+    You are a literary analyst. Score this book based on the excerpts.
     
-    CALIBRATION REFERENCE:
-    - A professionally written, well-structured novel with compelling characters should score 85+
-    - A decent but flawed manuscript with some issues should score 70-84
-    - An amateur memoir with no plot, flat characters, and rambling structure should score 40-50
-    - A poorly written manuscript with basic errors should score below 40
+    SCORING GUIDE - USE THESE RANGES:
+    85-95: Excellent - polished novel, strong plot, multiple characters, good dialogue
+    75-84: Good - solid manuscript with minor issues
+    60-74: Average - needs work
+    40-59: Below average - amateur, needs significant revision
+    Below 40: Poor - major problems
     
-    BOOK TITLE: {detected_title}
-    AUTHOR: {detected_author}
-    WORD COUNT: {word_count} words
-    {word_count_note}
-    
+    Title: {title}
+    Author: {author}
+    Word count: {word_count}
     {cover_text}
     
-    ACTUAL MANUSCRIPT EXCERPTS:
+    EXCERPTS:
+    Beginning: {beginning}
+    Middle: {middle}
+    Ending: {ending}
     
-    BEGINNING:
-    {beginning}
-    
-    MIDDLE:
-    {middle}
-    
-    ENDING:
-    {ending}
-    
-    Return JSON with these sections:
-    
+    Return JSON with exactly this structure:
     {{
         "marketability": {{
-            "overall_score": (0-100 based on the calibration reference above),
-            "overall_grade": ("A", "B", "C", "D", "F" with +/-),
-            "overall_assessment": "One honest sentence about this book's potential",
+            "overall_score": 0-100,
+            "overall_grade": "A-F with +/-",
+            "overall_assessment": "summary",
             "scores": {{
-                "writing_quality": {{"score": 0-100, "explanation": "Based on prose quality in excerpts"}},
-                "commercial_potential": {{"score": 0-100, "explanation": "Based on hook and marketability"}},
-                "genre_fit": {{"score": 0-100, "explanation": "How well it fits genre conventions"}},
-                "hook_strength": {{"score": 0-100, "explanation": "Based on the opening excerpt"}},
-                "character_appeal": {{"score": 0-100, "explanation": "Based on characters shown"}},
-                "pacing": {{"score": 0-100, "explanation": "Based on flow between excerpts"}},
-                "originality": {{"score": 0-100, "explanation": "Unique elements observed"}}
+                "writing_quality": {{"score": 0-100, "explanation": "explanation"}},
+                "commercial_potential": {{"score": 0-100, "explanation": "explanation"}},
+                "genre_fit": {{"score": 0-100, "explanation": "explanation"}},
+                "hook_strength": {{"score": 0-100, "explanation": "explanation"}},
+                "character_appeal": {{"score": 0-100, "explanation": "explanation"}},
+                "pacing": {{"score": 0-100, "explanation": "explanation"}},
+                "originality": {{"score": 0-100, "explanation": "explanation"}}
             }}
         }},
-        
         "writing_quality_detailed": {{
-            "prose_quality": "Assessment of sentence-level writing",
-            "dialogue": "Quality of dialogue (if any)",
-            "description": "Quality of descriptive passages",
-            "voice": "Strength of narrative voice",
-            "technical_execution": "Grammar and punctuation notes"
+            "prose_quality": "",
+            "dialogue": "",
+            "description": "",
+            "voice": "",
+            "technical_execution": ""
         }},
-        
         "book_info": {{
-            "title": "{detected_title}",
-            "author": "{detected_author}",
-            "genre": "primary genre based on content",
-            "subgenres": ["subgenre1", "subgenre2"],
-            "tone": "overall emotional tone",
-            "writing_style": "descriptive/lyrical/direct/etc",
-            "pacing_summary": "fast/medium/slow"
+            "title": "{title}",
+            "author": "{author}",
+            "genre": "",
+            "tone": "",
+            "writing_style": "",
+            "pacing_summary": ""
         }},
-        
         "characters": {{
-            "main": [
-                {{
-                    "name": "character name from excerpts",
-                    "role": "protagonist/antagonist/etc",
-                    "description": "description based on excerpts",
-                    "arc": "how they change (if any)",
-                    "motivation": "what drives them (if shown)"
-                }}
-            ],
-            "supporting": ["list other characters mentioned"],
-            "total_characters_identified": "number of distinct characters"
+            "main": [],
+            "supporting": []
         }},
-        
         "narrative_arc": {{
-            "exposition": "setup shown in beginning",
-            "rising_action": "events in middle",
-            "climax": "turning point (if any)",
-            "falling_action": "aftermath (if any)",
-            "resolution": "conclusion (if any)"
+            "exposition": "",
+            "rising_action": "",
+            "climax": "",
+            "resolution": ""
         }},
-        
-        "plot": {{
-            "opening_hook": "what grabs attention",
-            "inciting_incident": "what starts the story (if shown)",
-            "major_plot_points": ["points from excerpts"],
-            "plot_twists": ["any surprises"]
-        }},
-        
-        "themes": {{
-            "primary": ["main themes visible"],
-            "secondary": ["other themes hinted at"]
-        }},
-        
-        "strengths": ["5 specific strengths with examples from text"],
-        
-        "areas_for_improvement": ["5 specific weaknesses with concrete suggestions"],
-        
+        "strengths": [],
+        "areas_for_improvement": [],
         "target_audience": {{
-            "primary": "who might enjoy this",
-            "appeal": "why they'd enjoy it"
-        }},
-        
-        "marketing": {{
-            "unique_selling_points": ["what makes it special"],
-            "blurb_suggestion": "A potential blurb"
+            "primary": "",
+            "appeal": ""
         }}
     }}
     """
@@ -728,7 +516,7 @@ def analyze_book_complete(text, cover_analysis, word_count):
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You are a professional literary analyst. Score according to the calibration reference."},
+                {"role": "system", "content": "You are a literary analyst. Score honestly using the ranges provided."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.4,
@@ -737,41 +525,29 @@ def analyze_book_complete(text, cover_analysis, word_count):
         )
         
         result = json.loads(response.choices[0].message.content)
-        
         if 'book_info' not in result:
             result['book_info'] = {}
-        result['book_info']['title'] = detected_title
-        result['book_info']['author'] = detected_author
-        
+        result['book_info']['title'] = title
+        result['book_info']['author'] = author
         return result
         
     except Exception as e:
-        st.error(f"Analysis failed: {str(e)}")
+        st.error(f"Analysis failed: {e}")
         return None
 
 def extract_text_full(file):
-    """Extract entire manuscript"""
+    """Extract text from file"""
     try:
         if file.type == "application/pdf":
             pdf_reader = PyPDF2.PdfReader(file)
-            text = ""
-            for page in pdf_reader.pages:
-                text += page.extract_text()
-            return text[:50000]
-            
+            return " ".join([p.extract_text() for p in pdf_reader.pages])[:50000]
         elif file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
             doc = docx.Document(file)
-            text = ""
-            for para in doc.paragraphs:
-                text += para.text + "\n"
-            return text[:50000]
-            
+            return " ".join([p.text for p in doc.paragraphs])[:50000]
         else:
-            text = file.getvalue().decode("utf-8")
-            return text[:50000]
-            
-    except Exception as e:
-        return f"Error extracting text: {str(e)}"
+            return file.getvalue().decode("utf-8")[:50000]
+    except:
+        return ""
 
 if __name__ == "__main__":
     show_marketability_checker()
