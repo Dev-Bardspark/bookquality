@@ -26,6 +26,25 @@ SENDER_EMAIL = st.secrets["SENDER_EMAIL"]
 SENDER_PASSWORD = st.secrets["SENDER_PASSWORD"]
 USE_TLS = st.secrets.get("use_tls", True)
 
+def estimate_pages_from_file_size(file_bytes, word_count=None):
+    """Estimate number of pages based on file size and/or word count"""
+    file_size_mb = len(file_bytes) / (1024 * 1024)
+    
+    # Rough estimates based on common formats:
+    if word_count and word_count > 0:
+        # If we have word count, use that (most accurate) - 300 words per page average
+        pages = max(1, round(word_count / 300))
+    else:
+        # Fallback to file size estimation
+        if file_size_mb < 0.1:  # Under 100KB
+            pages = max(1, round(file_size_mb * 10))
+        elif file_size_mb < 1:  # 100KB - 1MB
+            pages = max(1, round(file_size_mb * 20))
+        else:  # Over 1MB
+            pages = max(1, round(file_size_mb * 30))
+    
+    return pages
+
 def send_email(recipient_email, analysis_results, cover_analysis, book_title, author_name):
     """Send full analysis results via email - FIXED: Conditional signup message and includes editor"""
     
@@ -33,6 +52,7 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
     
     # Get word count from session state
     word_count = st.session_state.get('word_count', 0)
+    estimated_pages = st.session_state.get('estimated_pages', 0)
     
     # Get marketability score to determine if signup message should show
     marketability = analysis_results.get('marketability', {})
@@ -55,11 +75,11 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
         </div>
     """
     
-    # Add word count warning if needed (like app screen)
+    # Add word count and page estimate warning if needed (like app screen)
     if word_count < 70000:
         body += f"""
         <div style="padding: 20px; background: #fff3cd; border: 1px solid #ffc107; border-radius: 10px; margin: 20px 0;">
-            <p style="color: #856404; margin: 0;"><strong>⚠️ Note:</strong> Your manuscript is currently approximately {word_count:,} words long. A typical novel ranges from 70,000 to 100,000 words. If this is a partial manuscript or work in progress, the analysis was performed on the provided content without penalizing the score for length.</p>
+            <p style="color: #856404; margin: 0;"><strong>⚠️ Note:</strong> Your manuscript is approximately {word_count:,} words (~{estimated_pages} pages). A typical novel ranges from 70,000 to 100,000 words. If this is a partial manuscript or work in progress, the analysis was performed on the provided content without penalizing the score for length.</p>
         </div>
         """
     
@@ -438,6 +458,8 @@ def show_marketability_checker():
         st.session_state.full_text = None
     if 'word_count' not in st.session_state:
         st.session_state.word_count = None
+    if 'estimated_pages' not in st.session_state:
+        st.session_state.estimated_pages = None
     
     if not st.session_state.analysis_complete:
         show_upload_section()
@@ -463,9 +485,16 @@ def show_upload_section():
             full_text, word_count = extract_text_full(manuscript)
             st.session_state.full_text = full_text
             st.session_state.word_count = word_count
+            
+            # Estimate pages
+            manuscript.seek(0)  # Reset file pointer
+            file_bytes = manuscript.getvalue()
+            estimated_pages = estimate_pages_from_file_size(file_bytes, word_count)
+            st.session_state.estimated_pages = estimated_pages
+            
             # Truncate for analysis but keep full for word count
             st.session_state.text = full_text[:50000]
-            st.info(f"Your manuscript is approximately {word_count:,} words long. A typical novel ranges from 70,000 to 100,000 words. Note: If this is a partial manuscript or work in progress, the analysis will still be performed on the provided content without penalizing the score for length.")
+            st.info(f"Your manuscript is approximately {word_count:,} words long (~{estimated_pages} pages). A typical novel ranges from 70,000 to 100,000 words. Note: If this is a partial manuscript or work in progress, the analysis will still be performed on the provided content without penalizing the score for length.")
     
     with col2:
         st.markdown("**🎨 Cover Image (optional but recommended)**")
