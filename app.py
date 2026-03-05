@@ -413,14 +413,13 @@ def show_upload_section():
     """, unsafe_allow_html=True)
     
     if manuscript and email:
-        if st.button("🔍 GET MY FREE ANALYSIS", type="primary", use_container_width=True):
-            with st.spinner("Analyzing your book... (about 60 seconds)"):
-
-                if manuscript and email:
         # ALWAYS reset for new analysis
         st.session_state.analysis_complete = False
         st.session_state.analysis_result = None
         st.session_state.cover_analysis = None
+        
+        if st.button("🔍 GET MY FREE ANALYSIS", type="primary", use_container_width=True):
+            with st.spinner("Analyzing your book... (about 60 seconds)"):
                        
                 # Extract full manuscript
                 text = extract_text_full(manuscript)
