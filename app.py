@@ -14,6 +14,7 @@ from datetime import datetime
 import re
 import zipfile
 from xml.etree import ElementTree
+import fitz  # PyMuPDF for PDF cover extraction
 
 # Initialize OpenAI with secrets
 client = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
@@ -476,9 +477,9 @@ def show_upload_section():
         )
         if cover:
             st.success(f"✅ {cover.name}")
-            # For PDF covers, show a placeholder instead of trying to display
+            # For PDF covers, show a note but don't try to display
             if cover.type == "application/pdf":
-                st.info("📄 PDF cover uploaded (preview not available)")
+                st.info("📄 PDF cover uploaded (will be analyzed)")
             else:
                 try:
                     image = Image.open(cover)
@@ -644,71 +645,76 @@ def show_results_section():
     st.success(f"✅ We've sent your complete analysis to your email!")
 
 def analyze_cover(cover_file):
-    """Full cover analysis - handles various image formats including PDFs"""
+    """Full cover analysis - handles PDFs using PyMuPDF and all image formats"""
     
-    if cover_file.type == "application/pdf":
-        # For PDF covers, provide limited analysis
-        st.warning("PDF cover analysis is limited. For best results, please upload an image file (JPG, PNG, etc.)")
-        
-        # Return basic info about the PDF
-        return {
-            "colors": ["N/A - PDF format"],
-            "has_figure": "Unknown",
-            "figure_description": "PDF cover uploaded",
-            "typography": "See PDF file",
-            "composition": "PDF document",
-            "mood": "Based on PDF cover",
-            "genre_signals": "Based on PDF cover",
-            "strengths": ["PDF format maintains quality"],
-            "weaknesses": ["Limited visual analysis available"],
-            "suggestions": ["Upload JPG/PNG for better analysis"]
-        }
-    else:
-        # Handle regular image formats
-        try:
-            # Convert to base64 for OpenAI
+    try:
+        # Handle PDF files with PyMuPDF
+        if cover_file.type == "application/pdf":
+            st.info("🔄 Analyzing PDF cover...")
+            
+            # Open PDF with PyMuPDF
+            pdf_document = fitz.open(stream=cover_file.getvalue(), filetype="pdf")
+            
+            # Get first page
+            first_page = pdf_document[0]
+            
+            # Render page to image (higher dpi = better quality)
+            zoom = 2.0  # 2x zoom for better quality
+            mat = fitz.Matrix(zoom, zoom)
+            pix = first_page.get_pixmap(matrix=mat, alpha=False)
+            
+            # Convert to bytes
+            img_bytes = pix.tobytes("png")
+            cover_base64 = base64.b64encode(img_bytes).decode('utf-8')
+            
+            pdf_document.close()
+            
+        else:
+            # Handle regular image formats
             cover_bytes = cover_file.getvalue()
             cover_base64 = base64.b64encode(cover_bytes).decode('utf-8')
-            
-            prompt = """Analyze this book cover in detail. Return JSON with:
-            {
-                "colors": ["list of dominant colors"],
-                "has_figure": true/false,
-                "figure_description": "description if any figures present",
-                "typography": "description of font style",
-                "composition": "how elements are arranged",
-                "mood": "emotional feeling",
-                "genre_signals": "what genre this suggests",
-                "strengths": ["3 specific strengths"],
-                "weaknesses": ["3 specific weaknesses"],
-                "suggestions": ["3 improvements"]
-            }"""
-            
-            response = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": prompt},
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:image/jpeg;base64,{cover_base64}"
-                                }
+        
+        # Analyze with OpenAI vision
+        prompt = """Analyze this book cover in detail. Return JSON with:
+        {
+            "colors": ["list of dominant colors"],
+            "has_figure": true/false,
+            "figure_description": "description if any figures present",
+            "typography": "description of font style",
+            "composition": "how elements are arranged",
+            "mood": "emotional feeling",
+            "genre_signals": "what genre this suggests",
+            "strengths": ["3 specific strengths"],
+            "weaknesses": ["3 specific weaknesses"],
+            "suggestions": ["3 improvements"]
+        }"""
+        
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{cover_base64}"
                             }
-                        ]
-                    }
-                ],
-                max_tokens=1000,
-                temperature=0.3,
-                response_format={"type": "json_object"}
-            )
-            
-            return json.loads(response.choices[0].message.content)
-        except Exception as e:
-            st.error(f"Cover analysis failed: {e}")
-            return None
+                        }
+                    ]
+                }
+            ],
+            max_tokens=1000,
+            temperature=0.3,
+            response_format={"type": "json_object"}
+        )
+        
+        return json.loads(response.choices[0].message.content)
+        
+    except Exception as e:
+        st.error(f"Cover analysis failed: {e}")
+        return None
 
 def analyze_book_complete(text, cover_analysis, provided_title="", provided_author=""):
     """Complete book analysis based on ACTUAL manuscript text"""
