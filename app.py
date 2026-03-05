@@ -484,7 +484,7 @@ def show_upload_section():
     # Small "no spam" text under email
     st.markdown("""
     <p style="font-size: 12px; color: #666; margin-top: -10px; margin-bottom: 20px;">
-        We'll never spam you. Just this one analysis.
+        Your book is 100% secure and will never be used for training or marketing. By using this service we will add you to our free waitlist without obligation.
     </p>
     """, unsafe_allow_html=True)
     
