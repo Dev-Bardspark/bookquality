@@ -244,7 +244,7 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
             """
         body += "</div>"
     
-    # FIXED: Conditional signup message based on score (like app screen)
+    # FIXED: Conditional signup message based on score (like app screen) with updated text and link
     if overall_score < 70:
         # Get weaknesses for warning message
         weaknesses = analysis_results.get('areas_for_improvement', [])
@@ -271,7 +271,8 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
             <p>📊 Competitor tracker</p>
             <p>🎬 BookTok video creator</p>
             <p>🌐 Author website builder</p>
-            <a href="https://yourapp.com/signup" style="background: white; color: #667eea; padding: 12px 30px; text-decoration: none; border-radius: 25px; font-weight: bold; display: inline-block; margin-top: 10px;">SIGN UP FOR FREE</a>
+            <p>And Much More</p>
+            <a href="https://bardspark.com/sign-up-for-the-waitlist/" style="background: white; color: #667eea; padding: 12px 30px; text-decoration: none; border-radius: 25px; font-weight: bold; display: inline-block; margin-top: 10px;">JOIN THE WAITLIST</a>
         </div>
         """
     else:
@@ -282,14 +283,15 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
         </div>
         
         <div style="padding: 30px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; margin-top: 20px; color: white; text-align: center;">
-            <h2>✨ Ready to market your book?</h2>
+            <h2>✨ Ready to MARKET your book?</h2>
             <p style="font-size: 18px;">Sign up for BardSpark to access:</p>
             <p>🔍 ARC reader & influencer finder</p>
             <p>🎨 Marketing asset generator</p>
             <p>📊 Competitor tracker</p>
             <p>🎬 BookTok video creator</p>
             <p>🌐 Author website builder</p>
-            <a href="https://yourapp.com/signup" style="background: white; color: #667eea; padding: 12px 30px; text-decoration: none; border-radius: 25px; font-weight: bold; display: inline-block; margin-top: 10px;">SIGN UP FOR FREE</a>
+            <p>And Much More</p>
+            <a href="https://bardspark.com/sign-up-for-the-waitlist/" style="background: white; color: #667eea; padding: 12px 30px; text-decoration: none; border-radius: 25px; font-weight: bold; display: inline-block; margin-top: 10px;">JOIN THE WAITLIST</a>
         </div>
         """
     
@@ -577,7 +579,7 @@ def show_results_section():
     </div>
     """, unsafe_allow_html=True)
     
-    # Custom message based on score
+    # FIXED: Custom message based on score with updated text and link
     if overall_score < 70:
         # Get specific weaknesses to show
         weaknesses = analysis.get('areas_for_improvement', [])
@@ -596,19 +598,38 @@ def show_results_section():
             </ul>
         </div>
         """, unsafe_allow_html=True)
+        
+        st.markdown("""
+        <div style="padding: 30px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; margin: 20px 0; color: white; text-align: center;">
+            <h2>✨ Ready to improve your book?</h2>
+            <p style="font-size: 18px;">Sign up for BardSpark to access:</p>
+            <p>🔍 ARC reader & influencer finder</p>
+            <p>🎨 Marketing asset generator</p>
+            <p>📊 Competitor tracker</p>
+            <p>🎬 BookTok video creator</p>
+            <p>🌐 Author website builder</p>
+            <p>And Much More</p>
+            <a href="https://bardspark.com/sign-up-for-the-waitlist/" style="background: white; color: #667eea; padding: 12px 30px; text-decoration: none; border-radius: 25px; font-weight: bold; display: inline-block; margin-top: 10px;">JOIN THE WAITLIST</a>
+        </div>
+        """, unsafe_allow_html=True)
     else:
         st.success("Congratulations! Your book has a strong marketability score of 70% or better. We're happy to accept it for further marketing support. Check your email for the full analysis.")
+        
+        st.markdown("""
+        <div style="padding: 30px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; margin: 20px 0; color: white; text-align: center;">
+            <h2>✨ Ready to MARKET your book?</h2>
+            <p style="font-size: 18px;">Sign up for BardSpark to access:</p>
+            <p>🔍 ARC reader & influencer finder</p>
+            <p>🎨 Marketing asset generator</p>
+            <p>📊 Competitor tracker</p>
+            <p>🎬 BookTok video creator</p>
+            <p>🌐 Author website builder</p>
+            <p>And Much More</p>
+            <a href="https://bardspark.com/sign-up-for-the-waitlist/" style="background: white; color: #667eea; padding: 12px 30px; text-decoration: none; border-radius: 25px; font-weight: bold; display: inline-block; margin-top: 10px;">JOIN THE WAITLIST</a>
+        </div>
+        """, unsafe_allow_html=True)
     
     st.success(f"✅ We've sent your complete analysis to your email!")
-    
-    st.markdown("---")
-    st.markdown("### 🚀 Ready to market your book?")
-    st.markdown("Sign up for BardSpark to access all our marketing tools:")
-    
-    col1, col2, col3 = st.columns(3)
-    with col2:
-        if st.button("SIGN UP FOR FREE", use_container_width=True):
-            st.markdown("[Click here to sign up](https://yourapp.com/signup)")
 
 def analyze_cover(cover_base64):
     """Full cover analysis"""
