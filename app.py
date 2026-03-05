@@ -64,23 +64,17 @@ def main():
     st.title("Book Word Frequency Analyzer")
     st.write("Upload a book (PDF, DOCX, or TXT) to see the most frequent words.")
     
-    # File uploader
+    # File uploader - added key parameter
     uploaded_file = st.file_uploader("Choose a file", type=['pdf', 'docx', 'txt'], key="file_uploader")
     
-    # Reset analysis when new file is uploaded
     if uploaded_file is not None:
-        # Check if this is a new file (different from previous)
-        if 'current_file_name' not in st.session_state or st.session_state.current_file_name != uploaded_file.name:
-            # Clear previous analysis results
-            if 'top_words' in st.session_state:
-                del st.session_state['top_words']
-            if 'word_data' in st.session_state:
-                del st.session_state['word_data']
-            # Store current file name
-            st.session_state.current_file_name = uploaded_file.name
+        # Check if this is a new file
+        if 'current_file' not in st.session_state or st.session_state.current_file != uploaded_file.name:
+            st.session_state.current_file = uploaded_file.name
+            st.session_state.analysis_done = False
         
-        # Only analyze if we don't have results for this file
-        if 'top_words' not in st.session_state:
+        # Only analyze if not already done for this file
+        if not st.session_state.get('analysis_done', False):
             with st.spinner("Analyzing the book..."):
                 try:
                     # Extract text based on file type
@@ -99,6 +93,7 @@ def main():
                     
                     # Store in session state
                     st.session_state.top_words = top_words
+                    st.session_state.analysis_done = True
                     
                     # Create DataFrame for display
                     word_data = pd.DataFrame(top_words, columns=['Word', 'Frequency'])
@@ -110,8 +105,8 @@ def main():
                     st.error(f"Error analyzing file: {str(e)}")
                     return
         
-        # Display results if available
-        if 'word_data' in st.session_state and 'top_words' in st.session_state:
+        # Display results
+        if 'word_data' in st.session_state:
             # Display metrics
             col1, col2, col3 = st.columns(3)
             with col1:
@@ -140,17 +135,9 @@ def main():
             st.download_button(
                 label="Download results as CSV",
                 data=csv,
-                file_name=f"word_frequency_{st.session_state.current_file_name}.csv",
+                file_name=f"word_frequency_{st.session_state.current_file}.csv",
                 mime="text/csv"
             )
-    else:
-        # Reset everything when no file is uploaded
-        if 'current_file_name' in st.session_state:
-            del st.session_state['current_file_name']
-        if 'top_words' in st.session_state:
-            del st.session_state['top_words']
-        if 'word_data' in st.session_state:
-            del st.session_state['word_data']
 
 if __name__ == "__main__":
     main()
