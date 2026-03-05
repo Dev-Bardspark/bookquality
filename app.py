@@ -765,10 +765,19 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
     1. The book title MUST be "{detected_title}" in your response
     2. The author MUST be "{detected_author}" in your response
     3. Base ALL scores and comments on the ACTUAL text above
-    4. For characters: list EVERY character that appears in these excerpts with their names
-    5. For narrative arc: describe what you actually see in these excerpts
-    6. Be specific - reference actual events, names, and details from the text
-    7. For areas_for_improvement: be honest about weaknesses in THIS text
+    4. For characters: You MUST identify ALL characters mentioned in the excerpts. For each main character, include:
+       - Their name
+       - Their role (protagonist, antagonist, deuteragonist, confidant, foil, love interest, mentor, etc.)
+       - Description of who they are
+       - How they change (if shown)
+       - What drives them
+       - Their internal or external struggles
+       - Why readers will connect with them
+    5. Include supporting characters and key relationships between characters
+    6. For character_development section, describe how the protagonist evolves, what motivates any antagonist, and how supporting characters change
+    7. For narrative arc: describe what you actually see in these excerpts
+    8. Be specific - reference actual events, names, and details from the text
+    9. For areas_for_improvement: be honest about weaknesses in THIS text
     
     Return JSON with these sections:
     
@@ -809,15 +818,23 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
         "characters": {{
             "main": [
                 {{
-                    "name": "character name from excerpts",
+                    "name": "character name",
                     "role": "protagonist/antagonist/etc",
-                    "description": "description based on excerpts",
+                    "description": "who they are based on excerpts",
                     "arc": "how they change (if shown)",
-                    "motivation": "what drives them (if shown)"
+                    "motivation": "what drives them (if shown)",
+                    "conflict": "internal or external struggles (if shown)",
+                    "appeal_factor": "Why readers will connect with this character"
                 }}
             ],
-            "supporting": ["list any other characters mentioned"],
-            "total_characters_identified": "number of distinct characters in excerpts"
+            "supporting": ["list of supporting characters mentioned"],
+            "relationships": ["key dynamics between characters shown or implied"]
+        }},
+        
+        "character_development": {{
+            "protagonist_journey": "how the main character changes based on excerpts",
+            "antagonist_motivation": "what drives the opposition (if present)",
+            "supporting_arcs": ["how other characters evolve (if shown)"]
         }},
         
         "narrative_arc": {{
