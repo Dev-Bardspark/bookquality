@@ -952,17 +952,9 @@ def extract_text_full(file):
                     full_text += page_text + "\n"
         
 elif file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-    st.write(f"📄 Processing DOCX file...")
     doc = docx.Document(file)
-    para_count = 0
-    char_count = 0
     for para in doc.paragraphs:
         full_text += para.text + "\n"
-        para_count += 1
-        char_count += len(para.text)
-    st.write(f"Found {para_count} paragraphs")
-    st.write(f"Extracted {char_count} characters")
-    st.write(f"Estimated words: {len(full_text.split())}")
         
         # ODT files (OpenDocument Text)
         elif file.type == "application/vnd.oasis.opendocument.text":
