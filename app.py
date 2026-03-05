@@ -56,7 +56,7 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
     body += f"""
         <div style="padding: 20px; background: #f8f9fa; border-radius: 10px; margin-top: 20px;">
             <h2>📖 Book Overview</h2>
-            <p><strong>Genre:</strong> {book_info.get('genre', 'Unknown')}</p>
+            <p><strong>Genres:</strong> {', '.join(book_info.get('genres', ['Unknown']))}</p>
             <p><strong>Tone:</strong> {book_info.get('tone', 'Unknown')}</p>
             <p><strong>Writing Style:</strong> {book_info.get('writing_style', 'Unknown')}</p>
             <p><strong>Pacing:</strong> {book_info.get('pacing_summary', 'Unknown')}</p>
@@ -784,7 +784,17 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
         if detected_author == "Unknown Author" and len(first_lines) > 1:
             detected_author = first_lines[1] if len(first_lines[1]) < 50 else "Unknown Author"
     
-    # ALLOWED GENRES LIST WITH DESCRIPTIONS
+    # GENRE CLASSIFICATION RULES (ADD THESE BEFORE THE LIST)
+    genre_rules = """
+    GENRE CLASSIFICATION RULES - READ CAREFULLY:
+    - If the book is a personal story about the author's own life experiences → use "Memoir"
+    - "Non-Fiction" is ONLY for encyclopedias, textbooks, how-to books, informational guides
+    - DO NOT use "Non-Fiction" for memoirs, biographies, or autobiographies
+    - You can select MULTIPLE genres that fit (e.g., a memoir could also be LGBTQ+ Fiction)
+    - List them in order of relevance
+    """
+    
+    # ALLOWED GENRES LIST WITH DESCRIPTIONS (YOUR ORIGINAL DESCRIPTIONS - UNCHANGED)
     allowed_genres_text = """
     ALLOWED GENRES (use ONLY these for genre and subgenres):
     - Romance: Books centered on romantic relationships, love stories, and emotional connections between characters, often with happy endings.
@@ -800,7 +810,7 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
     - Literary Fiction: Character-driven, introspective stories that emphasize style, language, themes, and emotional depth over plot.
     - Children's: Books written for young children, usually with simple language, illustrations, and moral lessons.
     - Middle Grade: Stories for ages 8–12, often featuring adventure, friendship, family, school life, or light fantasy.
-    - Non-Fiction: Factual writing covering real events, people, ideas, or information.
+    - Non-Fiction: Factual writing covering real events, people, ideas, or information. (ONLY for informational books, NOT personal memoirs)
     - Memoir: Personal, true accounts of the author's own experiences, usually focused on specific themes or periods of life.
     - Biography: A detailed account of a real person's life, written by someone else, based on research and sources.
     - Autobiography: A full, chronological account of the author's own entire life, written by the person themselves.
@@ -813,7 +823,7 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
     - Erotica: Fiction that focuses explicitly on sexual desire, arousal, and intimate encounters.
     
     IMPORTANT: Genre and subgenres MUST be chosen ONLY from this list. DO NOT invent genres.
-    Choose ONE primary genre and up to TWO subgenres that also fit.
+    You can select MULTIPLE genres that fit the book.
     """
     
     prompt = f"""
@@ -823,6 +833,8 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
     AUTHOR (detected from manuscript): {detected_author}
     
     {cover_text}
+    
+    {genre_rules}
     
     {allowed_genres_text}
     
@@ -884,8 +896,7 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
         "book_info": {{
             "title": "{detected_title}",
             "author": "{detected_author}",
-            "genre": "primary genre MUST be from the approved list - choose ONE that best fits",
-            "subgenres": ["secondary genre from approved list (optional)", "another if applicable (max 2)"],
+            "genres": ["primary genre from approved list", "secondary genre if applicable", "another if applicable"],
             "tone": "overall emotional tone from these excerpts",
             "writing_style": "descriptive/lyrical/direct/etc from these excerpts",
             "pacing_summary": "fast/medium/slow based on these excerpts"
