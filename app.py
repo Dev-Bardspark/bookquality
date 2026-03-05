@@ -11,28 +11,25 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime
-
 # Initialize OpenAI with secrets
 client = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
-
 # Email config from secrets
 SMTP_SERVER = st.secrets["SMTP_SERVER"]
 SMTP_PORT = st.secrets["SMTP_PORT"]
 SENDER_EMAIL = st.secrets["SENDER_EMAIL"]
 SENDER_PASSWORD = st.secrets["SENDER_PASSWORD"]
 USE_TLS = st.secrets.get("use_tls", True)
-
 def send_email(recipient_email, analysis_results, cover_analysis, book_title, author_name):
     """Send full analysis results via email"""
-    
+   
     subject = f"Your Complete Book Analysis: {book_title} by {author_name}"
-    
+   
     # Format the email body with FULL analysis
     marketability = analysis_results.get('marketability', {})
     score = marketability.get('overall_score', 'N/A')
     grade = marketability.get('overall_grade', 'N/A')
     book_info = analysis_results.get('book_info', {})
-    
+   
     body = f"""
     <html>
     <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
@@ -44,7 +41,7 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
             <p>Marketability Score</p>
         </div>
     """
-    
+   
     # Book Overview
     body += f"""
         <div style="padding: 20px; background: #f8f9fa; border-radius: 10px; margin-top: 20px;">
@@ -55,7 +52,7 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
             <p><strong>Pacing:</strong> {book_info.get('pacing_summary', 'Unknown')}</p>
         </div>
     """
-    
+   
     # Overall Assessment
     body += f"""
         <div style="padding: 20px; margin-top: 20px;">
@@ -63,19 +60,19 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
             <p>{marketability.get('overall_assessment', '')}</p>
         </div>
     """
-    
+   
     # Detailed Scores with color coding
     body += """
         <div style="padding: 20px; background: #f8f9fa; border-radius: 10px; margin-top: 20px;">
             <h2>📈 Detailed Scores</h2>
     """
-    
+   
     scores = marketability.get('scores', {})
     for score_name, score_data in scores.items():
         display_name = score_name.replace('_', ' ').title()
         score_value = score_data.get('score', 0)
         explanation = score_data.get('explanation', '')
-        
+       
         # Color code the bar
         if score_value >= 80:
             bar_color = "#00cc66"
@@ -85,7 +82,7 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
             bar_color = "#ff8800"
         else:
             bar_color = "#ff4444"
-        
+       
         body += f"""
             <div style="margin-bottom: 20px;">
                 <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
@@ -98,7 +95,7 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
             </div>
         """
     body += "</div>"
-    
+   
     # Writing Quality
     if 'writing_quality_detailed' in analysis_results:
         writing = analysis_results['writing_quality_detailed']
@@ -110,7 +107,7 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
             <p><strong>Voice:</strong> {writing.get('voice', '')}</p>
         </div>
         """
-    
+   
     # Characters
     if 'characters' in analysis_results:
         chars = analysis_results['characters']
@@ -118,7 +115,7 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
         <div style="padding: 20px; background: #f8f9fa; border-radius: 10px; margin-top: 20px;">
             <h2>👥 Main Characters</h2>
         """
-        for char in chars.get('main', [])[:3]:  # Top 3 characters
+        for char in chars.get('main', [])[:3]: # Top 3 characters
             body += f"""
             <div style="margin-bottom: 15px; padding: 10px; background: white; border-radius: 5px;">
                 <strong>{char.get('name', 'Unknown')}</strong> - {char.get('role', '')}<br>
@@ -126,7 +123,7 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
             </div>
             """
         body += "</div>"
-    
+   
     # Narrative Arc
     if 'narrative_arc' in analysis_results:
         arc = analysis_results['narrative_arc']
@@ -139,7 +136,7 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
             <p><strong>Resolution:</strong> {arc.get('resolution', '')}</p>
         </div>
         """
-    
+   
     # Plot Overview
     if 'plot' in analysis_results:
         plot = analysis_results['plot']
@@ -150,7 +147,7 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
             <p><strong>Inciting Incident:</strong> {plot.get('inciting_incident', '')}</p>
         </div>
         """
-    
+   
     # Themes
     if 'themes' in analysis_results:
         themes = analysis_results['themes']
@@ -160,7 +157,7 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
             <p><strong>Primary:</strong> {', '.join(themes.get('primary', []))}</p>
         </div>
         """
-    
+   
     # Cover analysis if available
     if cover_analysis:
         body += f"""
@@ -172,7 +169,7 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
             <p><strong>Weaknesses:</strong> {', '.join(cover_analysis.get('weaknesses', ['N/A']))}</p>
         </div>
         """
-    
+   
     # Strengths & Improvements
     body += f"""
         <div style="padding: 20px; background: #f8f9fa; border-radius: 10px; margin-top: 20px;">
@@ -181,23 +178,23 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
     """
     for strength in analysis_results.get('strengths', [])[:5]:
         body += f"<li>{strength}</li>"
-    
+   
     body += """
             </ul>
         </div>
-        
+       
         <div style="padding: 20px; margin-top: 20px;">
             <h2>🔧 Areas for Improvement</h2>
             <ul>
     """
     for area in analysis_results.get('areas_for_improvement', [])[:5]:
         body += f"<li>{area}</li>"
-    
+   
     body += """
             </ul>
         </div>
     """
-    
+   
     # Target Audience
     if 'target_audience' in analysis_results:
         audience = analysis_results['target_audience']
@@ -208,7 +205,7 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
             <p><strong>Appeal:</strong> {audience.get('appeal', '')}</p>
         </div>
         """
-    
+   
     # Marketing Insights
     if 'marketing' in analysis_results:
         marketing = analysis_results['marketing']
@@ -220,7 +217,7 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
         """
         for usp in marketing.get('unique_selling_points', [])[:3]:
             body += f"<li>{usp}</li>"
-        
+       
         if marketing.get('blurb_suggestion'):
             body += f"""
             </ul>
@@ -228,7 +225,7 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
             <em>{marketing['blurb_suggestion']}</em></p>
             """
         body += "</div>"
-    
+   
     # Call to action - Sign up for interactive tools
     body += f"""
         <div style="padding: 30px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; margin-top: 20px; color: white; text-align: center;">
@@ -241,21 +238,21 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
             <p>🌐 Author website builder</p>
             <a href="https://yourapp.com/signup" style="background: white; color: #667eea; padding: 12px 30px; text-decoration: none; border-radius: 25px; font-weight: bold; display: inline-block; margin-top: 10px;">SIGN UP FOR FREE</a>
         </div>
-        
+       
         <p style="color: #999; font-size: 12px; text-align: center; margin-top: 30px;">
             Analysis performed on {datetime.now().strftime('%B %d, %Y')}
         </p>
     </body>
     </html>
     """
-    
+   
     try:
         msg = MIMEMultipart()
         msg['From'] = SENDER_EMAIL
         msg['To'] = recipient_email
         msg['Subject'] = subject
         msg.attach(MIMEText(body, 'html'))
-        
+       
         server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
         if USE_TLS:
             server.starttls()
@@ -266,16 +263,15 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
     except Exception as e:
         st.error(f"Email sending failed: {e}")
         return False
-
 def show_marketability_checker():
     """Marketability checker that delivers FULL analysis via email"""
-    
+   
     st.set_page_config(
         page_title="Free Book Analysis",
         page_icon="📊",
         layout="centered"
     )
-    
+   
     # Custom CSS
     st.markdown("""
     <style>
@@ -331,7 +327,7 @@ def show_marketability_checker():
         }
     </style>
     """, unsafe_allow_html=True)
-    
+   
     # Header
     st.markdown("""
     <div class="main-header">
@@ -339,7 +335,7 @@ def show_marketability_checker():
         <p>Get your COMPLETE book analysis emailed to you in 60 seconds</p>
     </div>
     """, unsafe_allow_html=True)
-    
+   
     # What they get
     with st.expander("📋 What's included in your free analysis", expanded=True):
         st.markdown("""
@@ -355,9 +351,9 @@ def show_marketability_checker():
         - 🎯 **Target audience** identification
         - 📢 **Marketing insights** and blurb suggestion
         """)
-    
+   
     st.markdown("---")
-    
+   
     # Initialize session state
     if 'analysis_complete' not in st.session_state:
         st.session_state.analysis_complete = False
@@ -365,17 +361,16 @@ def show_marketability_checker():
         st.session_state.analysis_result = None
     if 'cover_analysis' not in st.session_state:
         st.session_state.cover_analysis = None
-    
+   
     if not st.session_state.analysis_complete:
         show_upload_section()
     else:
         show_results_section()
-
 def show_upload_section():
     """Show file upload interface"""
-    
+   
     col1, col2 = st.columns(2)
-    
+   
     with col1:
         st.markdown("**📄 Manuscript (required)**")
         manuscript = st.file_uploader(
@@ -386,7 +381,7 @@ def show_upload_section():
         )
         if manuscript:
             st.success(f"✅ {manuscript.name}")
-    
+   
     with col2:
         st.markdown("**🎨 Cover Image (optional but recommended)**")
         cover = st.file_uploader(
@@ -399,31 +394,31 @@ def show_upload_section():
             st.success(f"✅ {cover.name}")
             image = Image.open(cover)
             st.image(image, width=100)
-    
+   
     st.markdown("---")
     st.markdown("### 📧 Where should we send your complete analysis?")
-    
-    email = st.text_input("Email address", placeholder="you@example.com")
-    
+   
+    email = st.text_input("Email address", placeholder="you@example.com", key="recipient_email")
+   
     # Small "no spam" text under email
     st.markdown("""
     <p style="font-size: 12px; color: #666; margin-top: -10px; margin-bottom: 20px;">
         We'll never spam you. Just this one analysis.
     </p>
     """, unsafe_allow_html=True)
-    
+   
     if manuscript and email:
         # ALWAYS reset for new analysis
         st.session_state.analysis_complete = False
         st.session_state.analysis_result = None
         st.session_state.cover_analysis = None
-        
+       
         if st.button("🔍 GET MY FREE ANALYSIS", type="primary", use_container_width=True):
             with st.spinner("Analyzing your book... (about 60 seconds)"):
-                       
+                      
                 # Extract full manuscript
                 text = extract_text_full(manuscript)
-                
+               
                 # Process cover if provided
                 cover_analysis = None
                 if cover:
@@ -431,21 +426,21 @@ def show_upload_section():
                     cover_base64 = base64.b64encode(cover_bytes).decode('utf-8')
                     cover_analysis = analyze_cover(cover_base64)
                     st.session_state.cover_analysis = cover_analysis
-                
+               
                 # Analyze manuscript (FULL analysis)
                 analysis = analyze_book_complete(text, cover_analysis)
-                
+               
                 if analysis:
                     st.session_state.analysis_result = analysis
-                    
+                   
                     # Get book title and author
                     book_info = analysis.get('book_info', {})
                     book_title = book_info.get('title', 'Your Book')
                     author_name = book_info.get('author', 'Unknown Author')
-                    
+                   
                     # Send email
                     email_sent = send_email(email, analysis, cover_analysis, book_title, author_name)
-                    
+                   
                     if email_sent:
                         st.session_state.analysis_complete = True
                         st.session_state.book_title = book_title
@@ -460,10 +455,9 @@ def show_upload_section():
             st.info("👆 Please upload your manuscript")
         elif not email:
             st.info("👆 Please enter your email address")
-
 def show_results_section():
     """Show results with preview and low score warning if needed"""
-    
+   
     analysis = st.session_state.analysis_result
     marketability = analysis.get('marketability', {})
     overall_score = marketability.get('overall_score', 0)
@@ -471,7 +465,7 @@ def show_results_section():
     book_info = analysis.get('book_info', {})
     book_title = book_info.get('title', 'Your Book')
     author_name = book_info.get('author', 'Unknown Author')
-    
+   
     # Color based on score
     if overall_score >= 80:
         bg_color = "linear-gradient(135deg, #00b09b 0%, #96c93d 100%)"
@@ -485,7 +479,7 @@ def show_results_section():
     else:
         bg_color = "linear-gradient(135deg, #ff4b4b 0%, #ff9f4b 100%)"
         emoji = "⚠️"
-    
+   
     # Show title and author at top
     st.markdown(f"""
     <div style="text-align: center; margin-bottom: 20px;">
@@ -493,7 +487,7 @@ def show_results_section():
         <h3 style="color: #666;">by {author_name}</h3>
     </div>
     """, unsafe_allow_html=True)
-    
+   
     # Show score
     st.markdown(f"""
     <div class="score-box" style="background: {bg_color};">
@@ -502,13 +496,13 @@ def show_results_section():
         <p style="font-size: 18px; margin-top: 10px;">Grade: {overall_grade} {emoji}</p>
     </div>
     """, unsafe_allow_html=True)
-    
+   
     # LOW SCORE WARNING - if score below 60
     if overall_score < 60:
         # Get specific weaknesses to show
         weaknesses = analysis.get('areas_for_improvement', [])
         top_weaknesses = weaknesses[:3] if weaknesses else ["Writing quality needs work", "Plot structure is unclear", "Character development is shallow"]
-        
+       
         st.markdown(f"""
         <div class="warning-box">
             <h3 style="color: #cc5500; margin-top: 0;">⚠️ Your book needs more work before marketing</h3>
@@ -521,27 +515,20 @@ def show_results_section():
             <p style="margin-bottom: 0;">📝 <strong>Recommendation:</strong> Focus on revisions before investing in marketing. We've sent detailed feedback to your email.</p>
         </div>
         """, unsafe_allow_html=True)
-    
+   
     st.success(f"✅ We've sent your complete analysis to your email!")
-    
+   
     st.markdown("---")
     st.markdown("### 🚀 Ready to market your book?")
     st.markdown("Sign up for BardSpark to access all our marketing tools:")
-    
+   
     col1, col2, col3 = st.columns(3)
     with col2:
         if st.button("SIGN UP FOR FREE", use_container_width=True):
             st.markdown("[Click here to sign up](https://yourapp.com/signup)")
-    
-    if st.button("🔄 Analyze Another Book", use_container_width=True):
-        st.session_state.analysis_complete = False
-        st.session_state.analysis_result = None
-        st.session_state.cover_analysis = None
-        st.rerun()
-
 def analyze_cover(cover_base64):
     """Full cover analysis"""
-    
+   
     prompt = """Analyze this book cover in detail. Return JSON with:
     {
         "colors": ["list of dominant colors"],
@@ -555,7 +542,7 @@ def analyze_cover(cover_base64):
         "weaknesses": ["3 specific weaknesses"],
         "suggestions": ["3 improvements"]
     }"""
-    
+   
     try:
         response = client.chat.completions.create(
             model="gpt-4o-mini",
@@ -577,66 +564,65 @@ def analyze_cover(cover_base64):
             temperature=0.3,
             response_format={"type": "json_object"}
         )
-        
+       
         return json.loads(response.choices[0].message.content)
     except:
         return None
-
 def analyze_book_complete(text, cover_analysis):
     """Complete book analysis based on ACTUAL manuscript text"""
-    
+   
     if len(text) > 50000:
         text = text[:50000] + "... [truncated]"
-    
+   
     total_len = len(text)
     beginning = text[:min(5000, total_len//3)]
     middle = text[total_len//3:total_len//3*2][:5000]
     ending = text[-5000:]
-    
+   
     cover_text = ""
     if cover_analysis:
         cover_text = f"\nCOVER ANALYSIS:\n{json.dumps(cover_analysis, indent=2)}"
-    
+   
     # Extract title and author from first few lines
     first_lines = text[:1000].split('\n')
     detected_title = "Unknown Title"
     detected_author = "Unknown Author"
-    
+   
     for i, line in enumerate(first_lines):
         line = line.strip()
         if line and len(line) > 5 and not line.startswith(' ') and not line.startswith('\t'):
-            if i == 0:  # First non-empty line might be title
+            if i == 0: # First non-empty line might be title
                 detected_title = line
-            elif i == 1 and 'by' in line.lower():  # Second line might have author
+            elif i == 1 and 'by' in line.lower(): # Second line might have author
                 detected_author = line.replace('by', '').replace('BY', '').strip()
             break
-    
+   
     # Also check for "BY" pattern
     for i, line in enumerate(first_lines):
         if 'by' in line.lower() and len(line) < 50:
             detected_author = line.replace('by', '').replace('BY', '').strip()
             if i > 0 and first_lines[i-1].strip():
                 detected_title = first_lines[i-1].strip()
-    
+   
     prompt = f"""
     You are a professional literary analyst. Analyze THIS SPECIFIC BOOK based SOLELY on the manuscript excerpts provided below.
-    
+   
     BOOK TITLE (detected from manuscript): {detected_title}
     AUTHOR (detected from manuscript): {detected_author}
-    
+   
     {cover_text}
-    
+   
     ACTUAL MANUSCRIPT EXCERPTS - USE THESE FOR YOUR ANALYSIS:
-    
+   
     BEGINNING (first 5000 chars):
     {beginning}
-    
+   
     MIDDLE (middle 5000 chars):
     {middle}
-    
+   
     ENDING (last 5000 chars):
     {ending}
-    
+   
     IMPORTANT INSTRUCTIONS:
     1. The book title MUST be "{detected_title}" in your response
     2. The author MUST be "{detected_author}" in your response
@@ -645,9 +631,9 @@ def analyze_book_complete(text, cover_analysis):
     5. For narrative arc: describe what you actually see in these excerpts
     6. Be specific - reference actual events, names, and details from the text
     7. For areas_for_improvement: be honest about weaknesses in THIS text
-    
+   
     Return JSON with these sections:
-    
+   
     {{
         "marketability": {{
             "overall_score": (0-100 number based on these excerpts),
@@ -663,7 +649,7 @@ def analyze_book_complete(text, cover_analysis):
                 "originality": {{"score": 0-100, "explanation": "Unique elements observed in these excerpts"}}
             }}
         }},
-        
+       
         "writing_quality_detailed": {{
             "prose_quality": "Assessment of sentence-level writing from these excerpts - quote examples",
             "dialogue": "Quality and naturalness of dialogue from these excerpts - quote examples",
@@ -671,7 +657,7 @@ def analyze_book_complete(text, cover_analysis):
             "voice": "Strength and consistency of narrative voice in these excerpts",
             "technical_execution": "Grammar, punctuation, formatting in these excerpts"
         }},
-        
+       
         "book_info": {{
             "title": "{detected_title}",
             "author": "{detected_author}",
@@ -681,7 +667,7 @@ def analyze_book_complete(text, cover_analysis):
             "writing_style": "descriptive/lyrical/direct/etc from these excerpts",
             "pacing_summary": "fast/medium/slow based on these excerpts"
         }},
-        
+       
         "characters": {{
             "main": [
                 {{
@@ -695,7 +681,7 @@ def analyze_book_complete(text, cover_analysis):
             "supporting": ["list any other characters mentioned"],
             "total_characters_identified": "number of distinct characters in excerpts"
         }},
-        
+       
         "narrative_arc": {{
             "exposition": "setup shown in beginning excerpt",
             "rising_action": "events in middle excerpt",
@@ -703,35 +689,35 @@ def analyze_book_complete(text, cover_analysis):
             "falling_action": "aftermath in ending excerpt (if any)",
             "resolution": "conclusion shown in ending excerpt"
         }},
-        
+       
         "plot": {{
             "opening_hook": "what grabs attention in the first 500 chars",
             "inciting_incident": "what starts the story (if shown)",
             "major_plot_points": ["point1 from excerpts", "point2 from excerpts"],
             "plot_twists": ["any surprises in excerpts"]
         }},
-        
+       
         "themes": {{
             "primary": ["main themes visible in excerpts"],
             "secondary": ["other themes hinted at"]
         }},
-        
+       
         "strengths": ["5 specific strengths of THIS manuscript with examples from the text"],
-        
+       
         "areas_for_improvement": ["5 specific weaknesses in THIS manuscript with concrete suggestions based on the text"],
-        
+       
         "target_audience": {{
             "primary": "who would enjoy THIS specific book",
             "appeal": "why they'd enjoy it based on these excerpts"
         }},
-        
+       
         "marketing": {{
             "unique_selling_points": ["what makes THIS specific book special based on excerpts"],
             "blurb_suggestion": "A potential back-cover blurb based on THIS content"
         }}
     }}
     """
-    
+   
     try:
         response = client.chat.completions.create(
             model="gpt-4o-mini",
@@ -743,21 +729,20 @@ def analyze_book_complete(text, cover_analysis):
             max_tokens=4000,
             response_format={"type": "json_object"}
         )
-        
+       
         result = json.loads(response.choices[0].message.content)
-        
+       
         # Ensure title and author are set
         if 'book_info' not in result:
             result['book_info'] = {}
         result['book_info']['title'] = detected_title
         result['book_info']['author'] = detected_author
-        
+       
         return result
-        
+       
     except Exception as e:
         st.error(f"Analysis failed: {str(e)}")
         return None
-
 def extract_text_full(file):
     """Extract entire manuscript"""
     try:
@@ -766,22 +751,21 @@ def extract_text_full(file):
             text = ""
             for page in pdf_reader.pages:
                 text += page.extract_text()
-            return text[:50000]  # Cap at 50k chars
-            
+            return text[:50000] # Cap at 50k chars
+           
         elif file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
             doc = docx.Document(file)
             text = ""
             for para in doc.paragraphs:
                 text += para.text + "\n"
             return text[:50000]
-            
-        else:  # txt
+           
+        else: # txt
             text = file.getvalue().decode("utf-8")
             return text[:50000]
-            
+           
     except Exception as e:
         return f"Error extracting text: {str(e)}"
-
 # For running standalone - THIS WAS THE ONLY MISSING LINE
 if __name__ == "__main__":
     show_marketability_checker()
