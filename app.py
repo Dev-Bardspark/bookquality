@@ -37,50 +37,53 @@ EDITOR_EMAIL  = "editor@bardspark.com"
 # Send email to user + editor
 # ────────────────────────────────────────────────
 def send_email(recipient_email, analysis_results, cover_analysis, book_title, author_name, word_count):
-    subject = f"Book Analysis: {book_title} by {author_name} (from {recipient_email})"
-
+    """Send full analysis results via email - now with CC, word count, conditional banner"""
+   
+    subject = f"Your Complete Book Analysis: {book_title} by {author_name} (from {recipient_email})"
+   
     marketability = analysis_results.get('marketability', {})
     score = marketability.get('overall_score', 'N/A')
     grade = marketability.get('overall_grade', 'N/A')
     book_info = analysis_results.get('book_info', {})
-
-    # Congratulations or needs work banner
+   
+    # Conditional banner
     if isinstance(score, (int, float)) and score >= 70:
-        banner = """
-        <div style="padding:25px; background:#e6ffe6; border:2px solid #28a745; border-radius:12px; margin:30px 0; text-align:center; color:#155724;">
-            <h2 style="margin:0 0 15px 0; color:#155724;">🎉 Congratulations!</h2>
-            <p style="font-size:18px; margin:0;">Your book has a marketability score of 70% or higher.<br>
-            We are happy to accept it for further marketing support.</p>
+        conditional = """
+        <div style="padding: 25px; background: #d4edda; border: 1px solid #c3e6cb; border-radius: 10px; margin: 25px 0; color: #155724; text-align: center;">
+            <h2 style="margin: 0 0 15px 0;">🎉 Congratulations!</h2>
+            <p style="font-size: 18px;">Your book has a marketability score of 70% or better.<br>We are happy to accept it for further marketing support.</p>
         </div>
         """
     else:
-        banner = """
-        <div style="padding:25px; background:#fff3cd; border:2px solid #ffc107; border-radius:12px; margin:30px 0; color:#664d03;">
-            <h2 style="margin:0 0 15px 0; color:#664d03;">⚠️ Your book needs more work</h2>
+        conditional = """
+        <div style="padding: 25px; background: #fff3cd; border: 1px solid #ffeeba; border-radius: 10px; margin: 25px 0; color: #856404;">
+            <h2 style="margin: 0 0 15px 0;">⚠️ Your book needs more work</h2>
             <p>Most books sell only about 100 copies. A bad book will never sell.</p>
-            <p><strong>We only accept books with a score of 70% or better for marketing support.</strong></p>
-            <p>Your book needs more work. Please carefully read the full analysis below to see specific areas for improvement.</p>
+            <p><strong>For this reason we only accept books with a score of 70% or better for marketing support.</strong></p>
+            <p>Your book needs more work. Please read the detailed analysis below to find areas of improvement.</p>
         </div>
         """
-
+   
+    # Start of body (your original header)
     body = f"""
     <html>
-    <body style="font-family:Arial,sans-serif; max-width:680px; margin:0 auto; padding:20px; line-height:1.6; color:#333;">
-        <div style="background:linear-gradient(135deg,#667eea 0%,#764ba2 100%); padding:50px 20px; border-radius:16px; color:white; text-align:center; margin-bottom:35px;">
-            <h1 style="margin:0; font-size:38px;">Your Book Marketability Analysis</h1>
-            <h2 style="margin:18px 0 10px 0; font-size:28px;">{book_title}</h2>
-            <h3 style="margin:0; font-size:22px; opacity:0.95;">by {author_name}</h3>
-            <div style="font-size:72px; font-weight:bold; margin:30px 0;">{score}</div>
-            <p style="font-size:22px; margin:0;">Marketability Score • {grade}</p>
+    <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; border-radius: 10px; color: white; text-align: center;">
+            <h1>Your Complete Book Analysis</h1>
+            <h2 style="font-size: 32px; margin: 10px 0;">{book_title}</h2>
+            <h3 style="font-size: 20px; margin: 0 0 20px 0; opacity: 0.9;">by {author_name}</h3>
+            <div style="font-size: 48px; font-weight: bold; margin: 20px 0;">{score} ({grade})</div>
+            <p>Marketability Score</p>
         </div>
 
-        <div style="padding:24px; background:#f8f9fa; border-radius:12px; margin-bottom:30px; border-left:6px solid #667eea;">
-            <h3 style="margin-top:0;">📏 Manuscript length</h3>
-            <p>Your uploaded manuscript is currently <strong>{word_count:,}</strong> words long.</p>
-            <p>A typical full novel is 70,000–100,000 words. If this is a partial manuscript or work-in-progress, the analysis was done on the content you provided (no length penalty was applied to the score).</p>
+        <!-- Word count warning -->
+        <div style="padding: 20px; background: #f8f9fa; border-radius: 10px; margin: 20px 0; border-left: 5px solid #667eea;">
+            <h3>📏 Manuscript Length</h3>
+            <p>Your manuscript is currently approximately <strong>{word_count:,}</strong> words long.</p>
+            <p>A typical novel ranges from 70,000 to 100,000 words. If this is a partial manuscript or work in progress, the analysis has been performed on the provided content without penalizing the score for length.</p>
         </div>
 
-        {banner}
+        {conditional}
 
         <!-- Book Overview -->
         <div style="padding:24px; background:#f8f9fa; border-radius:12px; margin-bottom:30px;">
@@ -127,7 +130,7 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
 
     # Final message + CTA
     body += f"""
-        <div style="padding:40px 20px; background:linear-gradient(135deg,#667eea 0%,#764ba2 100%); border-radius:16px; color:white; text-align:center; margin:50px 0;">
+        <div style="padding:30px; background:linear-gradient(135deg,#667eea 0%,#764ba2 100%); border-radius:16px; color:white; text-align:center; margin:50px 0;">
             <h2 style="margin:0 0 25px 0; font-size:32px;">✅ Analysis Complete</h2>
             <p style="font-size:19px; margin:0 0 30px 0;">Full detailed report sent to <strong>{recipient_email}</strong></p>
             <p style="font-size:18px; margin:0 0 30px 0;">Ready to publish and promote your book?</p>
@@ -150,7 +153,7 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
         msg['Cc'] = EDITOR_EMAIL
         msg['Subject'] = subject
         msg.attach(MIMEText(body, 'html'))
-
+       
         server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
         if USE_TLS:
             server.starttls()
@@ -159,7 +162,7 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
         server.quit()
         return True
     except Exception as e:
-        st.error(f"Email sending failed: {str(e)}")
+        st.error(f"Email sending failed: {e}")
         return False
 
 # ────────────────────────────────────────────────
@@ -195,7 +198,7 @@ def show_upload():
                 st.session_state.word_count = len(text.split()) if text else 0
 
             st.success(f"File loaded: {manuscript.name}")
-            st.info(f"**Words detected:** {st.session_state.word_count:,}\n\nTypical novel = 70,000 – 100,000 words\nPartial manuscripts are analyzed without length penalty.")
+            st.info(f"Your manuscript is currently approximately {st.session_state.word_count:,} words long. A typical novel ranges from 70,000 to 100,000 words. Note: If this is a partial manuscript or work in progress, the analysis will still be performed on the provided content without penalizing the score for length.")
 
     with col2:
         st.subheader("Cover image (optional)")
@@ -222,7 +225,9 @@ def show_upload():
                     except:
                         pass
 
-                analysis = analyze_book(st.session_state.text, cover_analysis, title_input, author_input)
+                text = st.session_state['text']
+                word_count = st.session_state['word_count']
+                analysis = analyze_book(text, cover_analysis, title_input, author_input)
 
                 if analysis:
                     info = analysis.get('book_info', {})
@@ -236,7 +241,7 @@ def show_upload():
                         cover_analysis,
                         st.session_state.book_title,
                         st.session_state.author_name,
-                        st.session_state.word_count
+                        word_count
                     )
 
                     if sent:
