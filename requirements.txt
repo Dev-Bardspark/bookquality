@@ -3,4 +3,6 @@ streamlit
 PyPDF2
 python-docx
 Pillow
+plotly
+nltk
 
