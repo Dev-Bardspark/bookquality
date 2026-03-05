@@ -26,33 +26,10 @@ SENDER_EMAIL = st.secrets["SENDER_EMAIL"]
 SENDER_PASSWORD = st.secrets["SENDER_PASSWORD"]
 USE_TLS = st.secrets.get("use_tls", True)
 
-def estimate_pages_from_file_size(file_bytes, word_count=None):
-    """Estimate number of pages based on file size and/or word count"""
-    file_size_mb = len(file_bytes) / (1024 * 1024)
-    
-    # Rough estimates based on common formats:
-    if word_count and word_count > 0:
-        # If we have word count, use that (most accurate) - 300 words per page average
-        pages = max(1, round(word_count / 300))
-    else:
-        # Fallback to file size estimation
-        if file_size_mb < 0.1:  # Under 100KB
-            pages = max(1, round(file_size_mb * 10))
-        elif file_size_mb < 1:  # 100KB - 1MB
-            pages = max(1, round(file_size_mb * 20))
-        else:  # Over 1MB
-            pages = max(1, round(file_size_mb * 30))
-    
-    return pages
-
 def send_email(recipient_email, analysis_results, cover_analysis, book_title, author_name):
-    """Send full analysis results via email - SHOWS WORD COUNT ALWAYS"""
+    """Send full analysis results via email"""
     
     subject = f"Your Complete Book Analysis: {book_title} by {author_name}"
-    
-    # Get word count from session state
-    word_count = st.session_state.get('word_count', 0)
-    estimated_pages = st.session_state.get('estimated_pages', 0)
     
     # Get marketability score to determine if signup message should show
     marketability = analysis_results.get('marketability', {})
@@ -72,13 +49,6 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
             <h3 style="font-size: 20px; margin: 0 0 20px 0; opacity: 0.9;">by {author_name}</h3>
             <div style="font-size: 48px; font-weight: bold; margin: 20px 0;">{score} ({grade})</div>
             <p>Marketability Score</p>
-        </div>
-    """
-    
-    # WORD COUNT SECTION - ALWAYS SHOWS IN EMAIL
-    body += f"""
-        <div style="padding: 20px; background: #fff3cd; border: 1px solid #ffc107; border-radius: 10px; margin: 20px 0;">
-            <p style="color: #856404; margin: 0;"><strong>📊 Manuscript Stats:</strong> {word_count:,} words (~{estimated_pages} pages)</p>
         </div>
     """
     
@@ -453,10 +423,6 @@ def show_marketability_checker():
         st.session_state.cover_analysis = None
     if 'text' not in st.session_state:
         st.session_state.text = None
-    if 'word_count' not in st.session_state:
-        st.session_state.word_count = None
-    if 'estimated_pages' not in st.session_state:
-        st.session_state.estimated_pages = None
     
     if not st.session_state.analysis_complete:
         show_upload_section()
@@ -478,29 +444,8 @@ def show_upload_section():
         )
         if manuscript:
             st.success(f"✅ {manuscript.name}")
-            
-            # Get file bytes
-            file_bytes = manuscript.getvalue()
-            file_size_mb = len(file_bytes) / (1024 * 1024)
-            
-            # ESTIMATE word count based on file size (1MB ≈ 200,000 words for text)
-            estimated_word_count = int(file_size_mb * 200000)
-            
-            # Ensure minimum reasonable count
-            if estimated_word_count < 1000:
-                estimated_word_count = 1000
-                
-            st.session_state.word_count = estimated_word_count
-            
-            # Extract text for analysis (truncated)
+            # Extract text for analysis only
             st.session_state.text = extract_text_for_analysis(manuscript)
-            
-            # Estimate pages
-            estimated_pages = estimate_pages_from_file_size(file_bytes, estimated_word_count)
-            st.session_state.estimated_pages = estimated_pages
-            
-            # WORD COUNT SHOWS HERE ON SCREEN
-            st.info(f"Your manuscript is approximately {estimated_word_count:,} words based on file size (~{estimated_pages} pages). A typical novel ranges from 70,000 to 100,000 words. Note: If this is a partial manuscript or work in progress, the analysis will still be performed on the provided content without penalizing the score for length.")
     
     with col2:
         st.markdown("**🎨 Cover Image (optional but recommended)**")
@@ -826,6 +771,7 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
         detected_title = "Unknown Title"
         detected_author = "Unknown Author"
         
+        # Improved detection: skip lines that look like URLs or empty
         for i, line in enumerate(first_lines):
             if re.match(r'https?://', line) or len(line) < 5:
                 continue
@@ -834,8 +780,41 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
             if 'by' in line.lower() and len(line) < 100:
                 detected_author = re.sub(r'(?i)by', '', line).strip()
                 break
+        # Fallback if no 'by'
         if detected_author == "Unknown Author" and len(first_lines) > 1:
             detected_author = first_lines[1] if len(first_lines[1]) < 50 else "Unknown Author"
+    
+    # ALLOWED GENRES LIST WITH DESCRIPTIONS
+    allowed_genres_text = """
+    ALLOWED GENRES (use ONLY these for genre and subgenres):
+    - Romance: Books centered on romantic relationships, love stories, and emotional connections between characters, often with happy endings.
+    - Fantasy: Stories involving magic, mythical creatures, imaginary worlds, quests, or supernatural elements.
+    - Romantasy: A hybrid of romance and fantasy, blending deep romantic relationships with magical worlds, epic quests, and supernatural elements.
+    - Science Fiction: Speculative stories exploring futuristic technology, space exploration, alternate realities, dystopias, or scientific concepts.
+    - Mystery: Narratives built around solving a puzzle, crime, or secret, usually featuring investigation and revelation.
+    - Thriller: Fast-paced, suspenseful stories designed to create tension, danger, and excitement, often with high stakes.
+    - Horror: Stories intended to frighten, disturb, or unsettle readers through fear, the supernatural, or psychological terror.
+    - Young Adult: Fiction aimed at teenagers (roughly ages 12–18), typically featuring coming-of-age themes, identity, and first experiences.
+    - Historical Fiction: Stories set in the past that blend real historical events or settings with fictional characters and plots.
+    - Contemporary Fiction: Modern-day stories focusing on realistic characters, relationships, and everyday life issues.
+    - Literary Fiction: Character-driven, introspective stories that emphasize style, language, themes, and emotional depth over plot.
+    - Children's: Books written for young children, usually with simple language, illustrations, and moral lessons.
+    - Middle Grade: Stories for ages 8–12, often featuring adventure, friendship, family, school life, or light fantasy.
+    - Non-Fiction: Factual writing covering real events, people, ideas, or information.
+    - Memoir: Personal, true accounts of the author's own experiences, usually focused on specific themes or periods of life.
+    - Biography: A detailed account of a real person's life, written by someone else, based on research and sources.
+    - Autobiography: A full, chronological account of the author's own entire life, written by the person themselves.
+    - Self-Help: Practical books offering advice, strategies, or guidance for personal improvement, success, health, or happiness.
+    - LGBTQ+ Fiction: Stories that center queer characters, identities, relationships, and experiences.
+    - Paranormal: Fiction involving ghosts, vampires, werewolves, psychics, or other supernatural phenomena.
+    - Graphic Novels: Long-form stories told through sequential art and text, similar in length and complexity to novels.
+    - Comics: Shorter or serialized stories told through panels and illustrations, often in series or anthologies.
+    - Classics: Timeless, influential works of literature that have enduring cultural or literary significance.
+    - Erotica: Fiction that focuses explicitly on sexual desire, arousal, and intimate encounters.
+    
+    IMPORTANT: Genre and subgenres MUST be chosen ONLY from this list. DO NOT invent genres.
+    Choose ONE primary genre and up to TWO subgenres that also fit.
+    """
     
     prompt = f"""
     You are a professional literary analyst. Analyze THIS SPECIFIC BOOK based SOLELY on the manuscript excerpts provided below.
@@ -844,6 +823,8 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
     AUTHOR (detected from manuscript): {detected_author}
     
     {cover_text}
+    
+    {allowed_genres_text}
     
     ACTUAL MANUSCRIPT EXCERPTS - USE THESE FOR YOUR ANALYSIS:
     
@@ -903,8 +884,8 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
         "book_info": {{
             "title": "{detected_title}",
             "author": "{detected_author}",
-            "genre": "primary genre based on content",
-            "subgenres": ["subgenre1", "subgenre2"],
+            "genre": "primary genre MUST be from the approved list - choose ONE that best fits",
+            "subgenres": ["secondary genre from approved list (optional)", "another if applicable (max 2)"],
             "tone": "overall emotional tone from these excerpts",
             "writing_style": "descriptive/lyrical/direct/etc from these excerpts",
             "pacing_summary": "fast/medium/slow based on these excerpts"
@@ -982,6 +963,7 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
         
         result = json.loads(response.choices[0].message.content)
         
+        # Ensure title and author are set
         if 'book_info' not in result:
             result['book_info'] = {}
         result['book_info']['title'] = detected_title
