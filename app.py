@@ -11,14 +11,18 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime
+import re  # Added for better title/author cleaning
+
 # Initialize OpenAI with secrets
 client = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+
 # Email config from secrets
 SMTP_SERVER = st.secrets["SMTP_SERVER"]
 SMTP_PORT = st.secrets["SMTP_PORT"]
 SENDER_EMAIL = st.secrets["SENDER_EMAIL"]
 SENDER_PASSWORD = st.secrets["SENDER_PASSWORD"]
 USE_TLS = st.secrets.get("use_tls", True)
+
 def send_email(recipient_email, analysis_results, cover_analysis, book_title, author_name):
     """Send full analysis results via email"""
    
@@ -263,6 +267,7 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
     except Exception as e:
         st.error(f"Email sending failed: {e}")
         return False
+
 def show_marketability_checker():
     """Marketability checker that delivers FULL analysis via email"""
    
@@ -361,11 +366,16 @@ def show_marketability_checker():
         st.session_state.analysis_result = None
     if 'cover_analysis' not in st.session_state:
         st.session_state.cover_analysis = None
+    if 'text' not in st.session_state:
+        st.session_state.text = None
+    if 'word_count' not in st.session_state:
+        st.session_state.word_count = None
    
     if not st.session_state.analysis_complete:
         show_upload_section()
     else:
         show_results_section()
+
 def show_upload_section():
     """Show file upload interface"""
    
@@ -381,6 +391,10 @@ def show_upload_section():
         )
         if manuscript:
             st.success(f"✅ {manuscript.name}")
+            # Extract text once
+            st.session_state.text = extract_text_full(manuscript)
+            st.session_state.word_count = len(st.session_state.text.split())
+            st.info(f"Your manuscript is currently approximately {st.session_state.word_count:,} words long. A typical novel ranges from 70,000 to 100,000 words. Note: If this is a partial manuscript or work in progress, the analysis will still be performed on the provided content without penalizing the score for length.")
    
     with col2:
         st.markdown("**🎨 Cover Image (optional but recommended)**")
@@ -394,6 +408,10 @@ def show_upload_section():
             st.success(f"✅ {cover.name}")
             image = Image.open(cover)
             st.image(image, width=100)
+   
+    # Optional title and author inputs to override detection
+    book_title = st.text_input("Book Title (optional - we'll try to detect it if not provided)", "")
+    author_name = st.text_input("Author Name (optional - we'll try to detect it if not provided)", "")
    
     st.markdown("---")
     st.markdown("### 📧 Where should we send your complete analysis?")
@@ -416,8 +434,8 @@ def show_upload_section():
         if st.button("🔍 GET MY FREE ANALYSIS", type="primary", use_container_width=True):
             with st.spinner("Analyzing your book... (about 60 seconds)"):
                       
-                # Extract full manuscript
-                text = extract_text_full(manuscript)
+                # Use pre-extracted text
+                text = st.session_state.text
                
                 # Process cover if provided
                 cover_analysis = None
@@ -428,23 +446,23 @@ def show_upload_section():
                     st.session_state.cover_analysis = cover_analysis
                
                 # Analyze manuscript (FULL analysis)
-                analysis = analyze_book_complete(text, cover_analysis)
+                analysis = analyze_book_complete(text, cover_analysis, book_title, author_name)
                
                 if analysis:
                     st.session_state.analysis_result = analysis
                    
-                    # Get book title and author
+                    # Get book title and author (use provided or detected)
                     book_info = analysis.get('book_info', {})
-                    book_title = book_info.get('title', 'Your Book')
-                    author_name = book_info.get('author', 'Unknown Author')
+                    final_title = book_info.get('title', 'Your Book')
+                    final_author = book_info.get('author', 'Unknown Author')
                    
                     # Send email
-                    email_sent = send_email(email, analysis, cover_analysis, book_title, author_name)
+                    email_sent = send_email(email, analysis, cover_analysis, final_title, final_author)
                    
                     if email_sent:
                         st.session_state.analysis_complete = True
-                        st.session_state.book_title = book_title
-                        st.session_state.author_name = author_name
+                        st.session_state.book_title = final_title
+                        st.session_state.author_name = final_author
                         st.rerun()
                     else:
                         st.error("Failed to send email. Please try again.")
@@ -455,6 +473,7 @@ def show_upload_section():
             st.info("👆 Please upload your manuscript")
         elif not email:
             st.info("👆 Please enter your email address")
+
 def show_results_section():
     """Show results with preview and low score warning if needed"""
    
@@ -497,24 +516,27 @@ def show_results_section():
     </div>
     """, unsafe_allow_html=True)
    
-    # LOW SCORE WARNING - if score below 60
-    if overall_score < 60:
+    # Custom message based on score
+    if overall_score < 70:
         # Get specific weaknesses to show
         weaknesses = analysis.get('areas_for_improvement', [])
         top_weaknesses = weaknesses[:3] if weaknesses else ["Writing quality needs work", "Plot structure is unclear", "Character development is shallow"]
        
         st.markdown(f"""
         <div class="warning-box">
-            <h3 style="color: #cc5500; margin-top: 0;">⚠️ Your book needs more work before marketing</h3>
+            <h3 style="color: #cc5500; margin-top: 0;">⚠️ Your book needs more work</h3>
+            <p>Most books sell only about 100 copies. A bad book will never sell. For this reason, we only accept books with a score of 70% or better for marketing support.</p>
+            <p>Your book needs more work. Please read the analysis in your email to find areas of improvement.</p>
             <p style="font-weight: bold;">Based on our analysis, here's what's holding it back:</p>
             <ul>
                 <li>{top_weaknesses[0] if len(top_weaknesses) > 0 else "Writing needs significant revision"}</li>
                 <li>{top_weaknesses[1] if len(top_weaknesses) > 1 else "Plot requires stronger structure"}</li>
                 <li>{top_weaknesses[2] if len(top_weaknesses) > 2 else "Characters need more depth"}</li>
             </ul>
-            <p style="margin-bottom: 0;">📝 <strong>Recommendation:</strong> Focus on revisions before investing in marketing. We've sent detailed feedback to your email.</p>
         </div>
         """, unsafe_allow_html=True)
+    else:
+        st.success("Congratulations! Your book has a strong marketability score of 70% or better. We're happy to accept it for further marketing support. Check your email for the full analysis.")
    
     st.success(f"✅ We've sent your complete analysis to your email!")
    
@@ -526,6 +548,7 @@ def show_results_section():
     with col2:
         if st.button("SIGN UP FOR FREE", use_container_width=True):
             st.markdown("[Click here to sign up](https://yourapp.com/signup)")
+
 def analyze_cover(cover_base64):
     """Full cover analysis"""
    
@@ -568,7 +591,8 @@ def analyze_cover(cover_base64):
         return json.loads(response.choices[0].message.content)
     except:
         return None
-def analyze_book_complete(text, cover_analysis):
+
+def analyze_book_complete(text, cover_analysis, provided_title="", provided_author=""):
     """Complete book analysis based on ACTUAL manuscript text"""
    
     if len(text) > 50000:
@@ -583,26 +607,27 @@ def analyze_book_complete(text, cover_analysis):
     if cover_analysis:
         cover_text = f"\nCOVER ANALYSIS:\n{json.dumps(cover_analysis, indent=2)}"
    
-    # Extract title and author from first few lines
-    first_lines = text[:1000].split('\n')
-    detected_title = "Unknown Title"
-    detected_author = "Unknown Author"
-   
-    for i, line in enumerate(first_lines):
-        line = line.strip()
-        if line and len(line) > 5 and not line.startswith(' ') and not line.startswith('\t'):
-            if i == 0: # First non-empty line might be title
+    # Extract title and author from first few lines if not provided
+    if provided_title and provided_author:
+        detected_title = provided_title
+        detected_author = provided_author
+    else:
+        first_lines = [line.strip() for line in text[:1000].split('\n') if line.strip()]
+        detected_title = "Unknown Title"
+        detected_author = "Unknown Author"
+       
+        # Improved detection: skip lines that look like URLs or empty
+        for i, line in enumerate(first_lines):
+            if re.match(r'https?://', line) or len(line) < 5:
+                continue
+            if i == 0:
                 detected_title = line
-            elif i == 1 and 'by' in line.lower(): # Second line might have author
-                detected_author = line.replace('by', '').replace('BY', '').strip()
-            break
-   
-    # Also check for "BY" pattern
-    for i, line in enumerate(first_lines):
-        if 'by' in line.lower() and len(line) < 50:
-            detected_author = line.replace('by', '').replace('BY', '').strip()
-            if i > 0 and first_lines[i-1].strip():
-                detected_title = first_lines[i-1].strip()
+            if 'by' in line.lower() and len(line) < 100:
+                detected_author = re.sub(r'(?i)by', '', line).strip()
+                break
+        # Fallback if no 'by'
+        if detected_author == "Unknown Author" and len(first_lines) > 1:
+            detected_author = first_lines[1] if len(first_lines[1]) < 50 else "Unknown Author"
    
     prompt = f"""
     You are a professional literary analyst. Analyze THIS SPECIFIC BOOK based SOLELY on the manuscript excerpts provided below.
@@ -743,6 +768,7 @@ def analyze_book_complete(text, cover_analysis):
     except Exception as e:
         st.error(f"Analysis failed: {str(e)}")
         return None
+
 def extract_text_full(file):
     """Extract entire manuscript"""
     try:
@@ -750,7 +776,9 @@ def extract_text_full(file):
             pdf_reader = PyPDF2.PdfReader(file)
             text = ""
             for page in pdf_reader.pages:
-                text += page.extract_text()
+                page_text = page.extract_text()
+                if page_text:
+                    text += page_text + "\n"
             return text[:50000] # Cap at 50k chars
            
         elif file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
@@ -766,6 +794,7 @@ def extract_text_full(file):
            
     except Exception as e:
         return f"Error extracting text: {str(e)}"
-# For running standalone - THIS WAS THE ONLY MISSING LINE
+
+# For running standalone
 if __name__ == "__main__":
     show_marketability_checker()
