@@ -433,6 +433,8 @@ def show_marketability_checker():
         st.session_state.cover_analysis = None
     if 'text' not in st.session_state:
         st.session_state.text = None
+    if 'full_text' not in st.session_state:
+        st.session_state.full_text = None
     if 'word_count' not in st.session_state:
         st.session_state.word_count = None
     
@@ -456,10 +458,13 @@ def show_upload_section():
         )
         if manuscript:
             st.success(f"✅ {manuscript.name}")
-            # Extract text once
-            st.session_state.text = extract_text_full(manuscript)
-            st.session_state.word_count = len(st.session_state.text.split())
-            st.info(f"Your manuscript is currently approximately {st.session_state.word_count:,} words long. A typical novel ranges from 70,000 to 100,000 words. Note: If this is a partial manuscript or work in progress, the analysis will still be performed on the provided content without penalizing the score for length.")
+            # Extract text and get word count from FULL text
+            full_text, word_count = extract_text_full(manuscript)
+            st.session_state.full_text = full_text
+            st.session_state.word_count = word_count
+            # Truncate for analysis but keep full for word count
+            st.session_state.text = full_text[:50000]
+            st.info(f"Your manuscript is approximately {word_count:,} words long. A typical novel ranges from 70,000 to 100,000 words. Note: If this is a partial manuscript or work in progress, the analysis will still be performed on the provided content without penalizing the score for length.")
     
     with col2:
         st.markdown("**🎨 Cover Image (optional but recommended)**")
@@ -900,85 +905,74 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
         return None
 
 def extract_text_full(file):
-    """Extract entire manuscript from various file types"""
+    """Extract entire manuscript from various file types and return (text, word_count)"""
     try:
+        full_text = ""
         # PDF files
         if file.type == "application/pdf":
             pdf_reader = PyPDF2.PdfReader(file)
-            text = ""
             for page in pdf_reader.pages:
                 page_text = page.extract_text()
                 if page_text:
-                    text += page_text + "\n"
-            return text[:50000]
+                    full_text += page_text + "\n"
         
         # DOCX files
         elif file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
             doc = docx.Document(file)
-            text = ""
             for para in doc.paragraphs:
-                text += para.text + "\n"
-            return text[:50000]
+                full_text += para.text + "\n"
         
         # ODT files (OpenDocument Text)
         elif file.type == "application/vnd.oasis.opendocument.text":
             try:
-                # Try to extract from ODT (it's a zip file with content.xml)
                 with zipfile.ZipFile(file) as odt_zip:
                     with odt_zip.open('content.xml') as xml_file:
                         tree = ElementTree.parse(xml_file)
                         root = tree.getroot()
-                        
-                        # Find all text in paragraphs
                         namespaces = {'text': 'urn:oasis:names:tc:opendocument:xmlns:text:1.0'}
                         text_parts = []
                         for elem in root.findall('.//text:p', namespaces):
                             if elem.text:
                                 text_parts.append(elem.text)
-                        
-                        return ' '.join(text_parts)[:50000]
+                        full_text = ' '.join(text_parts)
             except Exception as e:
                 st.warning(f"Could not fully parse ODT file. Attempting basic text extraction: {e}")
-                # Fallback to reading as text
-                text = file.getvalue().decode("utf-8", errors="ignore")
-                return text[:50000]
+                full_text = file.getvalue().decode("utf-8", errors="ignore")
         
         # RTF files (Rich Text Format)
         elif file.type == "application/rtf" or file.type == "text/rtf" or file.name.endswith('.rtf'):
             try:
-                # RTF is complex, try to strip formatting and extract text
                 content = file.getvalue().decode("utf-8", errors="ignore")
                 # Very basic RTF text extraction - remove RTF commands
-                # This is simplistic but works for basic RTF
-                text = re.sub(r'\\[a-z]+[0-9-]*', ' ', content)
-                text = re.sub(r'\{[^}]*\}', ' ', text)
-                text = re.sub(r'\\\'[0-9a-f]{2}', ' ', text)
-                # Remove extra whitespace
-                text = ' '.join(text.split())
-                return text[:50000]
+                full_text = re.sub(r'\\[a-z]+[0-9-]*', ' ', content)
+                full_text = re.sub(r'\{[^}]*\}', ' ', full_text)
+                full_text = re.sub(r'\\\'[0-9a-f]{2}', ' ', full_text)
+                full_text = ' '.join(full_text.split())
             except Exception as e:
                 st.warning(f"Could not fully parse RTF file. Attempting basic text extraction: {e}")
-                text = file.getvalue().decode("utf-8", errors="ignore")
-                return text[:50000]
+                full_text = file.getvalue().decode("utf-8", errors="ignore")
         
         # Old DOC files
         elif file.type == "application/msword":
             try:
-                # Try to read as text (sometimes .doc files are actually text)
-                text = file.getvalue().decode("utf-8", errors="ignore")
-                return text[:50000]
+                full_text = file.getvalue().decode("utf-8", errors="ignore")
             except:
                 st.error("The older .doc format has limited support. For best results, please save your file as .docx or .txt and try again.")
-                return ""
+                return "", 0
         
-        # Plain text files (and fallback for any other text-based files)
+        # Plain text files
         else:
-            text = file.getvalue().decode("utf-8", errors="ignore")
-            return text[:50000]
+            full_text = file.getvalue().decode("utf-8", errors="ignore")
+        
+        # Calculate ACTUAL word count from full text
+        word_count = len(full_text.split())
+        
+        # Return full text and word count
+        return full_text, word_count
             
     except Exception as e:
         st.error(f"Error extracting text: {str(e)}")
-        return ""
+        return "", 0
 
 # For running standalone
 if __name__ == "__main__":
