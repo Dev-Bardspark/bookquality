@@ -46,7 +46,7 @@ def estimate_pages_from_file_size(file_bytes, word_count=None):
     return pages
 
 def send_email(recipient_email, analysis_results, cover_analysis, book_title, author_name):
-    """Send full analysis results via email - FIXED: Conditional signup message and includes editor"""
+    """Send full analysis results via email - SHOWS WORD COUNT ALWAYS"""
     
     subject = f"Your Complete Book Analysis: {book_title} by {author_name}"
     
@@ -75,13 +75,12 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
         </div>
     """
     
-    # Add word count and page estimate warning if needed (like app screen)
-    if word_count < 70000:
-        body += f"""
+    # WORD COUNT SECTION - ALWAYS SHOWS IN EMAIL
+    body += f"""
         <div style="padding: 20px; background: #fff3cd; border: 1px solid #ffc107; border-radius: 10px; margin: 20px 0;">
-            <p style="color: #856404; margin: 0;"><strong>⚠️ Note:</strong> Your manuscript is approximately {word_count:,} words (~{estimated_pages} pages). A typical novel ranges from 70,000 to 100,000 words. If this is a partial manuscript or work in progress, the analysis was performed on the provided content without penalizing the score for length.</p>
+            <p style="color: #856404; margin: 0;"><strong>📊 Manuscript Stats:</strong> {word_count:,} words (~{estimated_pages} pages)</p>
         </div>
-        """
+    """
     
     # Book Overview
     body += f"""
@@ -485,7 +484,6 @@ def show_upload_section():
             file_size_mb = len(file_bytes) / (1024 * 1024)
             
             # ESTIMATE word count based on file size (1MB ≈ 200,000 words for text)
-            # This is rough but consistent and doesn't depend on text extraction
             estimated_word_count = int(file_size_mb * 200000)
             
             # Ensure minimum reasonable count
@@ -501,6 +499,7 @@ def show_upload_section():
             estimated_pages = estimate_pages_from_file_size(file_bytes, estimated_word_count)
             st.session_state.estimated_pages = estimated_pages
             
+            # WORD COUNT SHOWS HERE ON SCREEN
             st.info(f"Your manuscript is approximately {estimated_word_count:,} words based on file size (~{estimated_pages} pages). A typical novel ranges from 70,000 to 100,000 words. Note: If this is a partial manuscript or work in progress, the analysis will still be performed on the provided content without penalizing the score for length.")
     
     with col2:
@@ -827,7 +826,6 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
         detected_title = "Unknown Title"
         detected_author = "Unknown Author"
         
-        # Improved detection: skip lines that look like URLs or empty
         for i, line in enumerate(first_lines):
             if re.match(r'https?://', line) or len(line) < 5:
                 continue
@@ -836,7 +834,6 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
             if 'by' in line.lower() and len(line) < 100:
                 detected_author = re.sub(r'(?i)by', '', line).strip()
                 break
-        # Fallback if no 'by'
         if detected_author == "Unknown Author" and len(first_lines) > 1:
             detected_author = first_lines[1] if len(first_lines[1]) < 50 else "Unknown Author"
     
@@ -985,7 +982,6 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
         
         result = json.loads(response.choices[0].message.content)
         
-        # Ensure title and author are set
         if 'book_info' not in result:
             result['book_info'] = {}
         result['book_info']['title'] = detected_title
