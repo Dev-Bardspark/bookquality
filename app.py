@@ -11,7 +11,9 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime
-import re  # Added for better title/author cleaning
+import re
+import zipfile
+from xml.etree import ElementTree
 
 # Initialize OpenAI with secrets
 client = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
@@ -244,7 +246,7 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
             """
         body += "</div>"
     
-    # FIXED: Conditional signup message based on score (like app screen) with updated text and link
+    # Conditional signup message based on score with updated text and link
     if overall_score < 70:
         # Get weaknesses for warning message
         weaknesses = analysis_results.get('areas_for_improvement', [])
@@ -317,7 +319,7 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
         server.login(SENDER_EMAIL, SENDER_PASSWORD)
         server.send_message(msg)
         
-        # FIXED: Also send to editor with user's email in subject
+        # Also send to editor with user's email in subject
         editor_msg = MIMEMultipart()
         editor_msg['From'] = SENDER_EMAIL
         editor_msg['To'] = "editor@bardspark.com"
@@ -447,8 +449,8 @@ def show_upload_section():
     with col1:
         st.markdown("**📄 Manuscript (required)**")
         manuscript = st.file_uploader(
-            "Upload PDF, DOCX, or TXT",
-            type=['pdf', 'docx', 'txt'],
+            "Upload PDF, DOCX, DOC, ODT, RTF, or TXT",
+            type=['pdf', 'docx', 'doc', 'odt', 'rtf', 'txt'],
             key="manuscript",
             label_visibility="collapsed"
         )
@@ -462,15 +464,22 @@ def show_upload_section():
     with col2:
         st.markdown("**🎨 Cover Image (optional but recommended)**")
         cover = st.file_uploader(
-            "Upload JPG or PNG",
-            type=['jpg', 'jpeg', 'png'],
+            "Upload JPG, PNG, GIF, WEBP, BMP, TIFF, or PDF",
+            type=['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'tiff', 'tif', 'pdf'],
             key="cover",
             label_visibility="collapsed"
         )
         if cover:
             st.success(f"✅ {cover.name}")
-            image = Image.open(cover)
-            st.image(image, width=100)
+            # For PDF covers, show a placeholder instead of trying to display
+            if cover.type == "application/pdf":
+                st.info("📄 PDF cover uploaded (preview not available)")
+            else:
+                try:
+                    image = Image.open(cover)
+                    st.image(image, width=100)
+                except:
+                    st.info(f"✅ {cover.name} uploaded")
     
     # Optional title and author inputs to override detection
     book_title = st.text_input("Book Title (optional - we'll try to detect it if not provided)", "")
@@ -484,7 +493,7 @@ def show_upload_section():
     # Small "no spam" text under email
     st.markdown("""
     <p style="font-size: 12px; color: #666; margin-top: -10px; margin-bottom: 20px;">
-        Your book is 100% secure and will never be used for training or marketing. By using this service we will add you to our free waitlist without obligation.
+        We'll never spam you. Just this one analysis.
     </p>
     """, unsafe_allow_html=True)
     
@@ -503,9 +512,7 @@ def show_upload_section():
                 # Process cover if provided
                 cover_analysis = None
                 if cover:
-                    cover_bytes = cover.getvalue()
-                    cover_base64 = base64.b64encode(cover_bytes).decode('utf-8')
-                    cover_analysis = analyze_cover(cover_base64)
+                    cover_analysis = analyze_cover(cover)
                     st.session_state.cover_analysis = cover_analysis
                 
                 # Analyze manuscript (FULL analysis)
@@ -579,7 +586,7 @@ def show_results_section():
     </div>
     """, unsafe_allow_html=True)
     
-    # FIXED: Custom message based on score with updated text and link
+    # Custom message based on score with updated text and link
     if overall_score < 70:
         # Get specific weaknesses to show
         weaknesses = analysis.get('areas_for_improvement', [])
@@ -631,48 +638,72 @@ def show_results_section():
     
     st.success(f"✅ We've sent your complete analysis to your email!")
 
-def analyze_cover(cover_base64):
-    """Full cover analysis"""
+def analyze_cover(cover_file):
+    """Full cover analysis - handles various image formats including PDFs"""
     
-    prompt = """Analyze this book cover in detail. Return JSON with:
-    {
-        "colors": ["list of dominant colors"],
-        "has_figure": true/false,
-        "figure_description": "description if any figures present",
-        "typography": "description of font style",
-        "composition": "how elements are arranged",
-        "mood": "emotional feeling",
-        "genre_signals": "what genre this suggests",
-        "strengths": ["3 specific strengths"],
-        "weaknesses": ["3 specific weaknesses"],
-        "suggestions": ["3 improvements"]
-    }"""
-    
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{cover_base64}"
-                            }
-                        }
-                    ]
-                }
-            ],
-            max_tokens=1000,
-            temperature=0.3,
-            response_format={"type": "json_object"}
-        )
+    if cover_file.type == "application/pdf":
+        # For PDF covers, provide limited analysis
+        st.warning("PDF cover analysis is limited. For best results, please upload an image file (JPG, PNG, etc.)")
         
-        return json.loads(response.choices[0].message.content)
-    except:
-        return None
+        # Return basic info about the PDF
+        return {
+            "colors": ["N/A - PDF format"],
+            "has_figure": "Unknown",
+            "figure_description": "PDF cover uploaded",
+            "typography": "See PDF file",
+            "composition": "PDF document",
+            "mood": "Based on PDF cover",
+            "genre_signals": "Based on PDF cover",
+            "strengths": ["PDF format maintains quality"],
+            "weaknesses": ["Limited visual analysis available"],
+            "suggestions": ["Upload JPG/PNG for better analysis"]
+        }
+    else:
+        # Handle regular image formats
+        try:
+            # Convert to base64 for OpenAI
+            cover_bytes = cover_file.getvalue()
+            cover_base64 = base64.b64encode(cover_bytes).decode('utf-8')
+            
+            prompt = """Analyze this book cover in detail. Return JSON with:
+            {
+                "colors": ["list of dominant colors"],
+                "has_figure": true/false,
+                "figure_description": "description if any figures present",
+                "typography": "description of font style",
+                "composition": "how elements are arranged",
+                "mood": "emotional feeling",
+                "genre_signals": "what genre this suggests",
+                "strengths": ["3 specific strengths"],
+                "weaknesses": ["3 specific weaknesses"],
+                "suggestions": ["3 improvements"]
+            }"""
+            
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/jpeg;base64,{cover_base64}"
+                                }
+                            }
+                        ]
+                    }
+                ],
+                max_tokens=1000,
+                temperature=0.3,
+                response_format={"type": "json_object"}
+            )
+            
+            return json.loads(response.choices[0].message.content)
+        except Exception as e:
+            st.error(f"Cover analysis failed: {e}")
+            return None
 
 def analyze_book_complete(text, cover_analysis, provided_title="", provided_author=""):
     """Complete book analysis based on ACTUAL manuscript text"""
@@ -852,8 +883,9 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
         return None
 
 def extract_text_full(file):
-    """Extract entire manuscript"""
+    """Extract entire manuscript from various file types"""
     try:
+        # PDF files
         if file.type == "application/pdf":
             pdf_reader = PyPDF2.PdfReader(file)
             text = ""
@@ -861,21 +893,75 @@ def extract_text_full(file):
                 page_text = page.extract_text()
                 if page_text:
                     text += page_text + "\n"
-            return text[:50000] # Cap at 50k chars
-            
+            return text[:50000]
+        
+        # DOCX files
         elif file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
             doc = docx.Document(file)
             text = ""
             for para in doc.paragraphs:
                 text += para.text + "\n"
             return text[:50000]
-            
-        else: # txt
-            text = file.getvalue().decode("utf-8")
+        
+        # ODT files (OpenDocument Text)
+        elif file.type == "application/vnd.oasis.opendocument.text":
+            try:
+                # Try to extract from ODT (it's a zip file with content.xml)
+                with zipfile.ZipFile(file) as odt_zip:
+                    with odt_zip.open('content.xml') as xml_file:
+                        tree = ElementTree.parse(xml_file)
+                        root = tree.getroot()
+                        
+                        # Find all text in paragraphs
+                        namespaces = {'text': 'urn:oasis:names:tc:opendocument:xmlns:text:1.0'}
+                        text_parts = []
+                        for elem in root.findall('.//text:p', namespaces):
+                            if elem.text:
+                                text_parts.append(elem.text)
+                        
+                        return ' '.join(text_parts)[:50000]
+            except Exception as e:
+                st.warning(f"Could not fully parse ODT file. Attempting basic text extraction: {e}")
+                # Fallback to reading as text
+                text = file.getvalue().decode("utf-8", errors="ignore")
+                return text[:50000]
+        
+        # RTF files (Rich Text Format)
+        elif file.type == "application/rtf" or file.type == "text/rtf" or file.name.endswith('.rtf'):
+            try:
+                # RTF is complex, try to strip formatting and extract text
+                content = file.getvalue().decode("utf-8", errors="ignore")
+                # Very basic RTF text extraction - remove RTF commands
+                # This is simplistic but works for basic RTF
+                text = re.sub(r'\\[a-z]+[0-9-]*', ' ', content)
+                text = re.sub(r'\{[^}]*\}', ' ', text)
+                text = re.sub(r'\\\'[0-9a-f]{2}', ' ', text)
+                # Remove extra whitespace
+                text = ' '.join(text.split())
+                return text[:50000]
+            except Exception as e:
+                st.warning(f"Could not fully parse RTF file. Attempting basic text extraction: {e}")
+                text = file.getvalue().decode("utf-8", errors="ignore")
+                return text[:50000]
+        
+        # Old DOC files
+        elif file.type == "application/msword":
+            try:
+                # Try to read as text (sometimes .doc files are actually text)
+                text = file.getvalue().decode("utf-8", errors="ignore")
+                return text[:50000]
+            except:
+                st.error("The older .doc format has limited support. For best results, please save your file as .docx or .txt and try again.")
+                return ""
+        
+        # Plain text files (and fallback for any other text-based files)
+        else:
+            text = file.getvalue().decode("utf-8", errors="ignore")
             return text[:50000]
             
     except Exception as e:
-        return f"Error extracting text: {str(e)}"
+        st.error(f"Error extracting text: {str(e)}")
+        return ""
 
 # For running standalone
 if __name__ == "__main__":
