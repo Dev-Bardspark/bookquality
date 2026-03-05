@@ -951,10 +951,10 @@ def extract_text_full(file):
                 if page_text:
                     full_text += page_text + "\n"
         
-elif file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-    doc = docx.Document(file)
-    for para in doc.paragraphs:
-        full_text += para.text + "\n"
+        elif file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+            doc = docx.Document(file)
+            for para in doc.paragraphs:
+                full_text += para.text + "\n"
         
         # ODT files (OpenDocument Text)
         elif file.type == "application/vnd.oasis.opendocument.text":
