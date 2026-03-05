@@ -454,8 +454,6 @@ def show_marketability_checker():
         st.session_state.cover_analysis = None
     if 'text' not in st.session_state:
         st.session_state.text = None
-    if 'full_text' not in st.session_state:
-        st.session_state.full_text = None
     if 'word_count' not in st.session_state:
         st.session_state.word_count = None
     if 'estimated_pages' not in st.session_state:
@@ -481,20 +479,29 @@ def show_upload_section():
         )
         if manuscript:
             st.success(f"✅ {manuscript.name}")
-            # Extract text and get word count from FULL text
-            full_text, word_count = extract_text_full(manuscript)
-            st.session_state.full_text = full_text
-            st.session_state.word_count = word_count
+            
+            # Get file bytes
+            file_bytes = manuscript.getvalue()
+            file_size_mb = len(file_bytes) / (1024 * 1024)
+            
+            # ESTIMATE word count based on file size (1MB ≈ 200,000 words for text)
+            # This is rough but consistent and doesn't depend on text extraction
+            estimated_word_count = int(file_size_mb * 200000)
+            
+            # Ensure minimum reasonable count
+            if estimated_word_count < 1000:
+                estimated_word_count = 1000
+                
+            st.session_state.word_count = estimated_word_count
+            
+            # Extract text for analysis (truncated)
+            st.session_state.text = extract_text_for_analysis(manuscript)
             
             # Estimate pages
-            manuscript.seek(0)  # Reset file pointer
-            file_bytes = manuscript.getvalue()
-            estimated_pages = estimate_pages_from_file_size(file_bytes, word_count)
+            estimated_pages = estimate_pages_from_file_size(file_bytes, estimated_word_count)
             st.session_state.estimated_pages = estimated_pages
             
-            # Truncate for analysis but keep full for word count
-            st.session_state.text = full_text[:50000]
-            st.info(f"Your manuscript is approximately {word_count:,} words long (~{estimated_pages} pages). A typical novel ranges from 70,000 to 100,000 words. Note: If this is a partial manuscript or work in progress, the analysis will still be performed on the provided content without penalizing the score for length.")
+            st.info(f"Your manuscript is approximately {estimated_word_count:,} words based on file size (~{estimated_pages} pages). A typical novel ranges from 70,000 to 100,000 words. Note: If this is a partial manuscript or work in progress, the analysis will still be performed on the provided content without penalizing the score for length.")
     
     with col2:
         st.markdown("**🎨 Cover Image (optional but recommended)**")
@@ -745,6 +752,57 @@ def analyze_cover(cover_file):
         st.error(f"Cover analysis failed: {e}")
         return None
 
+def extract_text_for_analysis(file):
+    """Extract text for analysis only - simplified version"""
+    try:
+        file_bytes = file.getvalue()
+        
+        if file.type == "application/pdf":
+            pdf_reader = PyPDF2.PdfReader(io.BytesIO(file_bytes))
+            text = ""
+            for page in pdf_reader.pages[:20]:  # First 20 pages for analysis
+                text += page.extract_text() + "\n"
+            return text[:50000]
+            
+        elif file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+            doc = docx.Document(io.BytesIO(file_bytes))
+            text = ""
+            for para in doc.paragraphs[:1000]:  # First 1000 paragraphs for analysis
+                text += para.text + "\n"
+            return text[:50000]
+            
+        elif file.type == "application/vnd.oasis.opendocument.text":
+            try:
+                with zipfile.ZipFile(io.BytesIO(file_bytes)) as odt_zip:
+                    with odt_zip.open('content.xml') as xml_file:
+                        tree = ElementTree.parse(xml_file)
+                        root = tree.getroot()
+                        namespaces = {'text': 'urn:oasis:names:tc:opendocument:xmlns:text:1.0'}
+                        text_parts = []
+                        for elem in root.findall('.//text:p', namespaces)[:500]:
+                            if elem.text:
+                                text_parts.append(elem.text)
+                        return ' '.join(text_parts)[:50000]
+            except:
+                return file_bytes.decode("utf-8", errors="ignore")[:50000]
+        
+        elif file.type == "application/rtf" or file.type == "text/rtf" or file.name.endswith('.rtf'):
+            content = file_bytes.decode("utf-8", errors="ignore")
+            text = re.sub(r'\\[a-z]+[0-9-]*', ' ', content)
+            text = re.sub(r'\{[^}]*\}', ' ', text)
+            text = re.sub(r'\\\'[0-9a-f]{2}', ' ', text)
+            return ' '.join(text.split())[:50000]
+        
+        elif file.type == "application/msword":
+            return file_bytes.decode("utf-8", errors="ignore")[:50000]
+        
+        else:  # Plain text
+            return file_bytes.decode("utf-8", errors="ignore")[:50000]
+            
+    except Exception as e:
+        st.error(f"Error extracting text for analysis: {e}")
+        return ""
+
 def analyze_book_complete(text, cover_analysis, provided_title="", provided_author=""):
     """Complete book analysis based on ACTUAL manuscript text"""
     
@@ -938,75 +996,6 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
     except Exception as e:
         st.error(f"Analysis failed: {str(e)}")
         return None
-
-def extract_text_full(file):
-    """Extract entire manuscript from various file types and return (text, word_count)"""
-    try:
-        full_text = ""
-        # PDF files
-        if file.type == "application/pdf":
-            pdf_reader = PyPDF2.PdfReader(file)
-            for page in pdf_reader.pages:
-                page_text = page.extract_text()
-                if page_text:
-                    full_text += page_text + "\n"
-        
-        elif file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-            doc = docx.Document(file)
-            for para in doc.paragraphs:
-                full_text += para.text + "\n"
-        
-        # ODT files (OpenDocument Text)
-        elif file.type == "application/vnd.oasis.opendocument.text":
-            try:
-                with zipfile.ZipFile(file) as odt_zip:
-                    with odt_zip.open('content.xml') as xml_file:
-                        tree = ElementTree.parse(xml_file)
-                        root = tree.getroot()
-                        namespaces = {'text': 'urn:oasis:names:tc:opendocument:xmlns:text:1.0'}
-                        text_parts = []
-                        for elem in root.findall('.//text:p', namespaces):
-                            if elem.text:
-                                text_parts.append(elem.text)
-                        full_text = ' '.join(text_parts)
-            except Exception as e:
-                st.warning(f"Could not fully parse ODT file. Attempting basic text extraction: {e}")
-                full_text = file.getvalue().decode("utf-8", errors="ignore")
-        
-        # RTF files (Rich Text Format)
-        elif file.type == "application/rtf" or file.type == "text/rtf" or file.name.endswith('.rtf'):
-            try:
-                content = file.getvalue().decode("utf-8", errors="ignore")
-                # Very basic RTF text extraction - remove RTF commands
-                full_text = re.sub(r'\\[a-z]+[0-9-]*', ' ', content)
-                full_text = re.sub(r'\{[^}]*\}', ' ', full_text)
-                full_text = re.sub(r'\\\'[0-9a-f]{2}', ' ', full_text)
-                full_text = ' '.join(full_text.split())
-            except Exception as e:
-                st.warning(f"Could not fully parse RTF file. Attempting basic text extraction: {e}")
-                full_text = file.getvalue().decode("utf-8", errors="ignore")
-        
-        # Old DOC files
-        elif file.type == "application/msword":
-            try:
-                full_text = file.getvalue().decode("utf-8", errors="ignore")
-            except:
-                st.error("The older .doc format has limited support. For best results, please save your file as .docx or .txt and try again.")
-                return "", 0
-        
-        # Plain text files
-        else:
-            full_text = file.getvalue().decode("utf-8", errors="ignore")
-        
-        # Calculate ACTUAL word count from full text
-        word_count = len(full_text.split())
-        
-        # Return full text and word count
-        return full_text, word_count
-            
-    except Exception as e:
-        st.error(f"Error extracting text: {str(e)}")
-        return "", 0
 
 # For running standalone
 if __name__ == "__main__":
