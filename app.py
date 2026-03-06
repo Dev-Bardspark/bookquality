@@ -33,8 +33,20 @@ def detect_ai_content(text, cover_analysis=None):
     """
     # Convert cover_analysis to a string for the prompt
     cover_text = "No cover provided"
+    cover_ai_info = ""
+    
     if cover_analysis:
         cover_text = json.dumps(cover_analysis, indent=2)
+        # Extract AI detection from cover analysis if available
+        if 'ai_detection' in cover_analysis:
+            ai_detect = cover_analysis['ai_detection']
+            cover_ai_info = f"""
+            COVER AI DETECTION RESULTS:
+            AI Generated: {ai_detect.get('is_ai_generated', 'unknown')}
+            Confidence: {ai_detect.get('confidence', 0)}%
+            Indicators: {ai_detect.get('indicators_found', [])}
+            Explanation: {ai_detect.get('explanation', '')}
+            """
     
     prompt = f"""
     Analyze this book manuscript excerpt and cover analysis for signs of AI generation.
@@ -44,6 +56,8 @@ def detect_ai_content(text, cover_analysis=None):
     
     COVER ANALYSIS:
     {cover_text}
+    
+    {cover_ai_info}
     
     Look for these AI indicators:
     
@@ -56,12 +70,9 @@ def detect_ai_content(text, cover_analysis=None):
     - Hallucinated facts or inconsistencies
     - Too "perfect" grammar with no stylistic quirks
     
-    COVER INDICATORS:
-    - Garbled or nonsensical text
-    - Anatomical issues (hands, fingers, eyes)
-    - Strange blending of elements
-    - Inconsistent lighting or physics
-    - "Melty" or glitchy textures
+    COVER INDICATORS (from the cover analysis above):
+    - Use the cover AI detection results if available
+    - Pay special attention to text gibberish, hand/finger anomalies, lighting inconsistencies
     
     Return JSON with:
     {{
@@ -70,7 +81,7 @@ def detect_ai_content(text, cover_analysis=None):
             "human_indicators_found": ["list of human-written signs - e.g., 'unique voice', 'emotional depth', 'specific sensory details']
         }},
         "cover_analysis": {{
-            "indicators_found": ["list of AI signs in cover - if none, leave empty"],
+            "indicators_found": ["list of AI signs in cover - USE THE COVER AI DETECTION RESULTS"],
             "human_indicators_found": ["list of human-designed signs in cover - e.g., 'thoughtful composition', 'consistent lighting']
         }},
         "overall_assessment": {{
@@ -896,7 +907,7 @@ def show_results_section():
     st.success(f"✅ We've sent your complete analysis to your email!")
 
 def analyze_cover(cover_file):
-    """Full cover analysis - handles PDFs using PyMuPDF and all image formats"""
+    """Full cover analysis - WITH AI DETECTION built in"""
     
     try:
         # Handle PDF files with PyMuPDF
@@ -925,8 +936,20 @@ def analyze_cover(cover_file):
             cover_bytes = cover_file.getvalue()
             cover_base64 = base64.b64encode(cover_bytes).decode('utf-8')
         
-        # Analyze with OpenAI vision
-        prompt = """Analyze this book cover in detail. Return JSON with:
+        # Analyze with OpenAI vision - with specific AI detection instructions
+        prompt = """Analyze this book cover in detail and determine if it's AI-generated.
+        
+        Look for these SPECIFIC AI GENERATION INDICATORS:
+        1. TEXT: Any text should be examined - AI often generates gibberish, misspelled words, or nonsensical letters
+        2. HANDS/FINGERS: Count fingers on any hands shown - AI frequently gets numbers wrong or creates malformed digits
+        3. ANATOMY: Check for impossible body parts, extra limbs, or strange proportions
+        4. LIGHTING: Look for inconsistent light sources or shadows that don't make physical sense
+        5. BLENDING: Check for areas where objects "melt" into each other or have unnatural transitions
+        6. SYMMETRY: AI often fails at symmetrical elements like faces, buildings, or patterns
+        7. PERSPECTIVE: Check if architectural elements follow proper perspective (parallel lines should converge)
+        8. DETAILS: Look for areas that are overly smooth or lack texture compared to the rest of the image
+        
+        Return JSON with:
         {
             "colors": ["list of dominant colors"],
             "has_figure": true/false,
@@ -935,6 +958,12 @@ def analyze_cover(cover_file):
             "composition": "how elements are arranged",
             "mood": "emotional feeling",
             "genre_signals": "what genre this suggests",
+            "ai_detection": {
+                "is_ai_generated": true/false,
+                "confidence": 0-100,
+                "indicators_found": ["list specific AI red flags found"],
+                "explanation": "brief explanation of why it is or isn't AI"
+            },
             "strengths": ["3 specific strengths"],
             "weaknesses": ["3 specific weaknesses"],
             "suggestions": ["3 improvements"]
@@ -961,7 +990,8 @@ def analyze_cover(cover_file):
             response_format={"type": "json_object"}
         )
         
-        return json.loads(response.choices[0].message.content)
+        result = json.loads(response.choices[0].message.content)
+        return result
         
     except Exception as e:
         st.error(f"Cover analysis failed: {e}")
