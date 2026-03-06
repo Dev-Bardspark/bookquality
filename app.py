@@ -128,6 +128,7 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
         text_indicators = ["No clear AI indicators detected", "Text appears organic", "Writing shows human variation"]
     
     # ALWAYS show the AI section - determine styling based on score
+    # ai_score = confidence that it's AI-generated (higher = more likely AI)
     if ai_score >= 70:
         ai_bg = "#ffebee"
         ai_border = "#f44336"
@@ -146,7 +147,9 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
         ai_bg = "#e8f5e8"
         ai_border = "#4caf50"
         ai_icon = "✍️✅"
-        ai_title = f"HUMAN-GENERATED CONTENT ({100-ai_score}% confidence)"
+        # For low AI scores, show human confidence as 100 - ai_score
+        human_confidence = 100 - ai_score
+        ai_title = f"HUMAN-GENERATED ({human_confidence}% confidence)"
         ai_message = "This appears to be authentically human-written"
         ai_marketing_note = "Marketing Impact: This human-written quality is valuable - it helps create authentic emotional connections with readers and can be highlighted in marketing materials."
     
