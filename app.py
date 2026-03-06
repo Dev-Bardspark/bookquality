@@ -127,19 +127,19 @@ def detect_ai_content(text, cover_analysis=None):
     cover_human = []
     cover_ai_summary = ""
     
-if cover_analysis and 'ai_detection' in cover_analysis:
-    ai_detect = cover_analysis['ai_detection']
-    cover_indicators = ai_detect.get('indicators_found', [])
-    cover_human = ai_detect.get('human_indicators_found', [])  # ← GET FROM API, NOT HARDCODED
-    
-    if ai_detect.get('is_ai_generated', False):
-        cover_ai_summary = f"Cover appears AI-generated: {ai_detect.get('explanation', '')}"
+    if cover_analysis and 'ai_detection' in cover_analysis:
+        ai_detect = cover_analysis['ai_detection']
+        cover_indicators = ai_detect.get('indicators_found', [])
+        cover_human = ai_detect.get('human_indicators_found', [])  # ← GET FROM API, NOT HARDCODED
+        
+        if ai_detect.get('is_ai_generated', False):
+            cover_ai_summary = f"Cover appears AI-generated: {ai_detect.get('explanation', '')}"
+        else:
+            cover_ai_summary = f"Cover appears human-designed: {ai_detect.get('explanation', '')}"
     else:
-        cover_ai_summary = f"Cover appears human-designed: {ai_detect.get('explanation', '')}"
-else:
-    cover_indicators = []
-    cover_human = []
-    cover_ai_summary = ""
+        cover_indicators = []
+        cover_human = []
+        cover_ai_summary = ""
     
     prompt = f"""
     Analyze this book manuscript excerpt for signs of AI generation.
