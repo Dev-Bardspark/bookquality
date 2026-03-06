@@ -218,7 +218,7 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
     text_indicators = ai_detection_results.get('text_analysis', {}).get('indicators_found', [])
     text_human_indicators = ai_detection_results.get('text_analysis', {}).get('human_indicators_found', [])
     
-    # Get cover indicators - THESE WILL NOW ACTUALLY SHOW
+    # Get cover indicators
     cover_indicators = ai_detection_results.get('cover_analysis', {}).get('indicators_found', [])
     cover_human_indicators = ai_detection_results.get('cover_analysis', {}).get('human_indicators_found', [])
     
@@ -326,7 +326,7 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
             </div>
             ''' if text_indicators or text_human_indicators else ''}
             
-            <!-- Show cover indicators - THIS WILL NOW APPEAR -->
+            <!-- Show cover indicators - FIXED: THIS IS NOW ACTUALLY HERE -->
             {f'''
             <div class="indicator-list">
                 <p style="margin: 0 0 10px 0; font-weight: bold;">🎨 Cover Analysis:</p>
