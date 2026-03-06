@@ -139,7 +139,9 @@ def detect_ai_content(text, cover_analysis=None):
             cover_human = []
     
     prompt = f"""
-    Analyze this book manuscript excerpt for signs of AI generation.
+    You are an EXPERT AI detector with a VERY CRITICAL eye. Your job is to identify AI-generated text, not to be fooled by it.
+    
+    Analyze this book manuscript excerpt for signs of AI generation. Be AGGRESSIVE in finding AI indicators.
     
     MANUSCRIPT EXCERPT:
     {text[:10000]}  # First 10,000 chars for analysis
@@ -147,20 +149,54 @@ def detect_ai_content(text, cover_analysis=None):
     COVER ANALYSIS SUMMARY:
     {cover_ai_summary}
     
-    Look for these AI indicators in the TEXT:
-    - Overuse of common AI transition phrases ("Furthermore", "Moreover", "In conclusion", "It is important to note")
-    - Repetitive sentence structures
-    - Generic descriptions lacking specific sensory details
-    - Predictable dialogue patterns
-    - Lack of authentic voice or personality
-    - Hallucinated facts or inconsistencies
-    - Too "perfect" grammar with no stylistic quirks
+    ===== COMMON AI TEXT PATTERNS (LOOK FOR THESE) =====
+    
+    STRUCTURAL AI INDICATORS:
+    - Perfectly structured paragraphs with clear topic sentences
+    - Overly neat section divisions (Early Years, The Formative Years, etc.)
+    - Artificial progression that feels templated
+    - No rough edges or natural digressions
+    
+    LINGUISTIC AI INDICATORS:
+    - Overuse of transition phrases: "furthermore," "moreover," "in conclusion," "it is important to note," "subsequently," "over the ensuing decades"
+    - Generic emotional language: "profound moments," "deep within my soul," "filled with gratitude," "ignited a passion"
+    - Inspirational clichés: "the sky belongs to those willing to reach for it," "meaningful achievements require sacrifice"
+    - Too-perfect grammar with no stylistic quirks or informality
+    - Vague descriptions lacking specific sensory details
+    
+    CONTENT AI INDICATORS:
+    - Generic names: "Captain James Mitchell," "small Midwestern town," "local grocery store"
+    - Missing specific real-world details (no exact prices, no real locations, no authentic anecdotes)
+    - No self-deprecation or humor
+    - Everything is positive and uplifting - no struggle, frustration, or failure
+    - Hallucinated or generic memories that lack authenticity
+    - Telling instead of showing
+    
+    ===== HUMAN WRITING INDICATORS (RARE) =====
+    
+    Only consider these as human indicators if MULTIPLE are present:
+    - Self-deprecating humor ("I doubt anyone would be interested")
+    - Specific mundane details ($14 per hour, Volkswagen broke down, couldn't pay the bill)
+    - Natural digressions and tangents that break the narrative flow
+    - Understatement ("I had some adventures but I won't go into them")
+    - Imperfect grammar or sentence fragments that reflect authentic voice
+    - Specific real names, places, dates, and prices
+    - Complaints, frustrations, or negative experiences
+    - Rambling that feels unpolished and真实
+    
+    ===== DECISION RULES =====
+    - "Clearly AI-generated": Multiple AI indicators present, few to no human indicators
+    - "Possibly AI-assisted": Mix of AI patterns and some human elements
+    - "Likely human-written": Strong human indicators throughout, few AI patterns
+    - "Inconclusive": Unclear or insufficient evidence
+    
+    Be CONSERVATIVE about calling something human. If the text reads like a polished memoir with generic emotional language and no specific details, flag it as AI.
     
     Return JSON with:
     {{
         "text_analysis": {{
-            "indicators_found": ["list of specific AI signs in the text - if none, leave empty"],
-            "human_indicators_found": ["list of human-written signs - e.g., 'unique voice', 'emotional depth', 'specific sensory details']
+            "indicators_found": ["list specific AI patterns found in the text - be thorough and quote examples if possible"],
+            "human_indicators_found": ["list specific human patterns found - be critical and only include genuine markers"]
         }},
         "cover_analysis": {{
             "indicators_found": {json.dumps(cover_indicators)},
@@ -169,8 +205,8 @@ def detect_ai_content(text, cover_analysis=None):
             "confidence": {cover_confidence}
         }},
         "overall_assessment": {{
-            "conclusion": ONE OF THESE EXACT PHRASES: "Likely human-written", "Possibly AI-assisted", "Clearly AI-generated", or "Inconclusive",
-            "explanation": "Brief explanation of the determination including both text and cover analysis if available"
+            "conclusion": ONE OF THESE EXACT PHRASES: "Clearly AI-generated", "Possibly AI-assisted", "Likely human-written", or "Inconclusive",
+            "explanation": "Detailed explanation with specific textual evidence supporting your conclusion"
         }}
     }}
     """
@@ -179,10 +215,10 @@ def detect_ai_content(text, cover_analysis=None):
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You are an AI detection expert. Analyze the text and return your conclusion using ONLY one of these exact phrases: 'Likely human-written', 'Possibly AI-assisted', 'Clearly AI-generated', or 'Inconclusive'."},
+                {"role": "system", "content": "You are an expert AI detector with a critical eye. You do not get fooled by polished writing. You look for the subtle patterns that distinguish AI from authentic human voice. Be aggressive in finding AI indicators and conservative about calling something human."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.3,
+            temperature=0.2,  # Lower temperature for more consistent, critical responses
             max_tokens=1000,
             response_format={"type": "json_object"}
         )
@@ -203,7 +239,6 @@ def detect_ai_content(text, cover_analysis=None):
                 "explanation": "AI detection could not be completed"
             }
         }
-
 def send_email(recipient_email, analysis_results, cover_analysis, book_title, author_name, ai_detection_results):
     """Send full analysis results via email with AI detection"""
     
