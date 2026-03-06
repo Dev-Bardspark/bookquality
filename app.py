@@ -31,14 +31,19 @@ def detect_ai_content(text, cover_analysis=None):
     Analyze text and cover for signs of AI generation
     Returns: dict with detection results
     """
+    # Convert cover_analysis to a string for the prompt
+    cover_text = "No cover provided"
+    if cover_analysis:
+        cover_text = json.dumps(cover_analysis, indent=2)
+    
     prompt = f"""
     Analyze this book manuscript excerpt and cover analysis for signs of AI generation.
     
     MANUSCRIPT EXCERPT:
     {text[:10000]}  # First 10,000 chars for analysis
     
-    COVER ANALYSIS (if available):
-    {json.dumps(cover_analysis) if cover_analysis else "No cover provided"}
+    COVER ANALYSIS:
+    {cover_text}
     
     Look for these AI indicators:
     
@@ -51,7 +56,7 @@ def detect_ai_content(text, cover_analysis=None):
     - Hallucinated facts or inconsistencies
     - Too "perfect" grammar with no stylistic quirks
     
-    COVER INDICATORS (if available):
+    COVER INDICATORS:
     - Garbled or nonsensical text
     - Anatomical issues (hands, fingers, eyes)
     - Strange blending of elements
@@ -65,11 +70,12 @@ def detect_ai_content(text, cover_analysis=None):
             "human_indicators_found": ["list of human-written signs - e.g., 'unique voice', 'emotional depth', 'specific sensory details']
         }},
         "cover_analysis": {{
-            "indicators_found": ["list of AI signs in cover - if none, leave empty"]
+            "indicators_found": ["list of AI signs in cover - if none, leave empty"],
+            "human_indicators_found": ["list of human-designed signs in cover - e.g., 'thoughtful composition', 'consistent lighting']
         }},
         "overall_assessment": {{
             "conclusion": ONE OF THESE EXACT PHRASES: "Likely human-written", "Possibly AI-assisted", "Clearly AI-generated", or "Inconclusive",
-            "explanation": "Brief explanation of the determination"
+            "explanation": "Brief explanation of the determination including both text and cover analysis if available"
         }}
     }}
     """
@@ -78,7 +84,7 @@ def detect_ai_content(text, cover_analysis=None):
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You are an AI detection expert. Analyze the text and return your conclusion using ONLY one of these exact phrases: 'Likely human-written', 'Possibly AI-assisted', 'Clearly AI-generated', or 'Inconclusive'."},
+                {"role": "system", "content": "You are an AI detection expert. Analyze the text and cover and return your conclusion using ONLY one of these exact phrases: 'Likely human-written', 'Possibly AI-assisted', 'Clearly AI-generated', or 'Inconclusive'."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.3,
@@ -117,8 +123,16 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
     
     # Get text indicators
     text_indicators = ai_detection_results.get('text_analysis', {}).get('indicators_found', [])
-    if not text_indicators:
-        text_indicators = ["No clear AI indicators detected"]
+    text_human_indicators = ai_detection_results.get('text_analysis', {}).get('human_indicators_found', [])
+    
+    # Get cover indicators
+    cover_indicators = ai_detection_results.get('cover_analysis', {}).get('indicators_found', [])
+    cover_human_indicators = ai_detection_results.get('cover_analysis', {}).get('human_indicators_found', [])
+    
+    if not text_indicators and not cover_indicators:
+        indicators_list = ["No AI indicators detected"]
+    else:
+        indicators_list = text_indicators + cover_indicators
     
     # Determine styling based on conclusion
     conclusion_lower = ai_conclusion.lower()
@@ -208,13 +222,37 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
             <p style="font-size: 16px; margin: 10px 0;"><strong>Analysis:</strong> {ai_message}</p>
             <p style="color: #555;">{ai_explanation}</p>
             
-            <!-- Show indicators -->
+            <!-- Show text indicators -->
+            {f'''
             <div class="indicator-list">
-                <p style="margin: 0 0 10px 0; font-weight: bold;">📊 Key Indicators:</p>
+                <p style="margin: 0 0 10px 0; font-weight: bold;">📝 Text Analysis:</p>
                 <ul style="margin: 0; color: #555;">
                     {''.join([f'<li style="margin: 5px 0;">{indicator}</li>' for indicator in text_indicators[:5]])}
                 </ul>
+                {f'''
+                <p style="margin: 10px 0 5px 0; font-weight: bold;">✨ Human Qualities:</p>
+                <ul style="margin: 0; color: #555;">
+                    {''.join([f'<li style="margin: 5px 0;">{indicator}</li>' for indicator in text_human_indicators[:3]])}
+                </ul>
+                ''' if text_human_indicators else ''}
             </div>
+            ''' if text_indicators or text_human_indicators else ''}
+            
+            <!-- Show cover indicators -->
+            {f'''
+            <div class="indicator-list">
+                <p style="margin: 0 0 10px 0; font-weight: bold;">🎨 Cover Analysis:</p>
+                <ul style="margin: 0; color: #555;">
+                    {''.join([f'<li style="margin: 5px 0;">{indicator}</li>' for indicator in cover_indicators[:3]])}
+                </ul>
+                {f'''
+                <p style="margin: 10px 0 5px 0; font-weight: bold;">✨ Cover Strengths:</p>
+                <ul style="margin: 0; color: #555;">
+                    {''.join([f'<li style="margin: 5px 0;">{indicator}</li>' for indicator in cover_human_indicators[:3]])}
+                </ul>
+                ''' if cover_human_indicators else ''}
+            </div>
+            ''' if cover_indicators or cover_human_indicators else ''}
             
             <!-- Show marketing impact -->
             <div class="marketing-impact">
@@ -562,6 +600,21 @@ def show_marketability_checker():
             font-size: 24px;
             margin: 0;
         }
+        .stButton > button {
+            width: 100%;
+            height: 60px;
+            font-size: 20px;
+            font-weight: bold;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            margin-top: 20px;
+        }
+        .stTextInput > div > input {
+            height: 50px;
+            font-size: 16px;
+        }
     </style>
     """, unsafe_allow_html=True)
     
@@ -660,17 +713,10 @@ def show_upload_section():
     st.markdown("""
     <p style="font-size: 12px; color: #666; margin-top: -10px; margin-bottom: 20px;">
         Your book is 100% secure and will never be used for training or marketing. By using this service we will add you to the free waitlist without obligation.
-
     </p>
     """, unsafe_allow_html=True)
     
     if manuscript and email:
-        # ALWAYS reset for new analysis
-        st.session_state.analysis_complete = False
-        st.session_state.analysis_result = None
-        st.session_state.cover_analysis = None
-        st.session_state.ai_detection = None
-        
         if st.button("🔍 GET MY FREE ANALYSIS", type="primary", use_container_width=True):
             with st.spinner("Analyzing your book... (about 60 seconds)"):
                        
