@@ -103,11 +103,11 @@ def detect_ai_content(text, cover_analysis=None):
         }
 
 def send_email(recipient_email, analysis_results, cover_analysis, book_title, author_name, ai_detection_results):
-    """Send full analysis results via email with AI detection"""
+    """Send full analysis results via email with AI detection - ALWAYS SHOWN"""
     
     subject = f"Your Complete Book Analysis: {book_title} by {author_name}"
     
-    # Get marketability score to determine if signup message should show
+    # Get marketability score
     marketability = analysis_results.get('marketability', {})
     overall_score = marketability.get('overall_score', 0)
     
@@ -116,57 +116,82 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
     grade = marketability.get('overall_grade', 'N/A')
     book_info = analysis_results.get('book_info', {})
     
-    # Get AI detection results
+    # Get AI detection results - ALWAYS show these
     ai_overall = ai_detection_results.get('overall_assessment', {})
     ai_conclusion = ai_overall.get('conclusion', 'Analysis incomplete')
     ai_score = ai_overall.get('score', 0)
     ai_explanation = ai_overall.get('explanation', '')
     
-    # Determine warning class based on AI score
+    # Get text indicators
+    text_indicators = ai_detection_results.get('text_analysis', {}).get('indicators_found', [])
+    if not text_indicators:
+        text_indicators = ["No clear AI indicators detected", "Text appears organic", "Writing shows human variation"]
+    
+    # ALWAYS show the AI section - determine styling based on score
     if ai_score >= 70:
-        ai_warning_class = "ai-warning-high"
+        ai_bg = "#ffebee"
+        ai_border = "#f44336"
         ai_icon = "🤖⚠️"
-        ai_message = "This appears to be AI-generated"
-        ai_marketing_note = "This can make marketing harder because readers can sense when writing lacks authentic human voice and emotional depth. AI-generated content often feels generic and fails to create the genuine connection readers crave."
+        ai_title = f"AI DETECTED ({ai_score}% confidence)"
+        ai_message = "This book shows strong signs of AI generation"
+        ai_marketing_note = "Marketing Impact: AI-generated content often struggles to connect with readers because it lacks authentic human voice and emotional depth. Readers can subconsciously detect when writing feels generic or lacks personal experience. Consider revising to inject more unique voice and personal anecdotes."
     elif ai_score >= 40:
-        ai_warning_class = "ai-warning-medium"
+        ai_bg = "#fff3e0"
+        ai_border = "#ff9800"
         ai_icon = "🤖❓"
-        ai_message = "May be AI-assisted"
-        ai_marketing_note = "If AI-assisted, ensure you've infused enough of your unique voice and personal experience. Readers connect with authentic human stories and perspectives."
+        ai_title = f"POSSIBLE AI ASSISTANCE ({ai_score}% confidence)"
+        ai_message = "This book may have used AI assistance"
+        ai_marketing_note = "Marketing Impact: If AI was used, ensure you've added enough of your unique voice and personal experience. Books that feel generic struggle to build reader loyalty and word-of-mouth recommendations."
     else:
-        ai_warning_class = "ai-warning-low"
+        ai_bg = "#e8f5e8"
+        ai_border = "#4caf50"
         ai_icon = "✍️✅"
-        ai_message = "Likely human-written"
-        ai_marketing_note = "This human-written quality is valuable for marketing - it helps create authentic reader connections and emotional engagement."
+        ai_title = f"HUMAN-GENERATED CONTENT ({100-ai_score}% confidence)"
+        ai_message = "This appears to be authentically human-written"
+        ai_marketing_note = "Marketing Impact: This human-written quality is valuable - it helps create authentic emotional connections with readers and can be highlighted in marketing materials."
     
     body = f"""
     <html>
     <head>
         <style>
-            .ai-warning-high {{
-                background: #ffebee;
-                border-left: 5px solid #f44336;
-                padding: 15px;
-                margin: 20px 0;
-                border-radius: 5px;
-            }}
-            .ai-warning-medium {{
-                background: #fff3e0;
-                border-left: 5px solid #ff9800;
-                padding: 15px;
-                margin: 20px 0;
-                border-radius: 5px;
-            }}
-            .ai-warning-low {{
-                background: #e8f5e8;
-                border-left: 5px solid #4caf50;
-                padding: 15px;
-                margin: 20px 0;
-                border-radius: 5px;
+            .ai-section {{
+                background: {ai_bg};
+                border-left: 5px solid {ai_border};
+                padding: 20px;
+                margin: 20px 0 30px 0;
+                border-radius: 10px;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
             }}
             .ai-icon {{
-                font-size: 24px;
-                margin-right: 10px;
+                font-size: 32px;
+                margin-right: 15px;
+            }}
+            .ai-title {{
+                font-size: 20px;
+                font-weight: bold;
+                margin: 0;
+                color: #333;
+            }}
+            .ai-badge {{
+                display: inline-block;
+                padding: 3px 10px;
+                background: white;
+                border-radius: 20px;
+                font-size: 14px;
+                margin-top: 5px;
+            }}
+            .indicator-list {{
+                background: white;
+                padding: 15px;
+                border-radius: 8px;
+                margin: 15px 0;
+            }}
+            .marketing-impact {{
+                background: rgba(255,255,255,0.7);
+                padding: 15px;
+                border-radius: 8px;
+                border-left: 3px solid {ai_border};
+                margin-top: 15px;
             }}
         </style>
     </head>
@@ -175,35 +200,40 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
             <h1>Your Complete Book Analysis</h1>
             <h2 style="font-size: 32px; margin: 10px 0;">{book_title}</h2>
             <h3 style="font-size: 20px; margin: 0 0 20px 0; opacity: 0.9;">by {author_name}</h3>
-            <div style="font-size: 48px; font-weight: bold; margin: 20px 0;">{score} ({grade})</div>
-            <p>Marketability Score</p>
         </div>
         
-        <!-- AI DETECTION SECTION - NEW -->
-        <div class="{ai_warning_class}">
-            <div style="display: flex; align-items: center;">
+        <!-- AI DETECTION SECTION - ALWAYS SHOWN PROMINENTLY -->
+        <div class="ai-section">
+            <div style="display: flex; align-items: center; margin-bottom: 15px;">
                 <span class="ai-icon">{ai_icon}</span>
-                <h3 style="margin: 0;">AI Detection Analysis: {ai_message}</h3>
+                <div>
+                    <div class="ai-title">{ai_title}</div>
+                    <div class="ai-badge">Confidence: {ai_score}%</div>
+                </div>
             </div>
-            <p><strong>Confidence:</strong> {ai_score}%</p>
-            <p><strong>Explanation:</strong> {ai_explanation}</p>
             
-            <!-- Text indicators if available -->
-            {f'''
-            <div style="margin-top: 10px; padding: 10px; background: rgba(0,0,0,0.05); border-radius: 5px;">
-                <p><strong>📝 Text Analysis:</strong></p>
-                <ul>
-                    {''.join([f'<li>{indicator}</li>' for indicator in ai_detection_results.get('text_analysis', {}).get('indicators_found', [])[:3]])}
+            <p style="font-size: 16px; margin: 10px 0;"><strong>Analysis:</strong> {ai_message}</p>
+            <p style="color: #555;">{ai_explanation}</p>
+            
+            <!-- Always show indicators -->
+            <div class="indicator-list">
+                <p style="margin: 0 0 10px 0; font-weight: bold;">📊 Key Indicators:</p>
+                <ul style="margin: 0; color: #555;">
+                    {''.join([f'<li style="margin: 5px 0;">{indicator}</li>' for indicator in text_indicators[:5]])}
                 </ul>
             </div>
-            ''' if ai_detection_results.get('text_analysis', {}).get('indicators_found') else ''}
             
-            <!-- Marketing impact note -->
-            <div style="margin-top: 15px; padding: 10px; background: white; border-radius: 5px; border-left: 3px solid #f44336;">
-                <p style="margin: 0; color: #333;">
-                    <strong>📢 Marketing Impact:</strong> {ai_marketing_note}
-                </p>
+            <!-- Always show marketing impact -->
+            <div class="marketing-impact">
+                <p style="margin: 0; font-weight: bold;">📢 Marketing Consideration:</p>
+                <p style="margin: 5px 0 0 0; color: #333;">{ai_marketing_note}</p>
             </div>
+        </div>
+        
+        <!-- Marketability Score -->
+        <div style="text-align: center; margin: 30px 0 20px 0;">
+            <div style="font-size: 72px; font-weight: bold; color: #667eea;">{score}</div>
+            <div style="font-size: 24px; color: #666;">Marketability Score ({grade})</div>
         </div>
     """
     
@@ -280,7 +310,7 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
         <div style="padding: 20px; background: #f8f9fa; border-radius: 10px; margin-top: 20px;">
             <h2>👥 Main Characters</h2>
         """
-        for char in chars.get('main', [])[:3]: # Top 3 characters
+        for char in chars.get('main', [])[:3]:
             body += f"""
             <div style="margin-bottom: 15px; padding: 10px; background: white; border-radius: 5px;">
                 <strong>{char.get('name', 'Unknown')}</strong> - {char.get('role', '')}<br>
@@ -391,9 +421,8 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
             """
         body += "</div>"
     
-    # Conditional signup message based on score with updated text and link
+    # Conditional signup message based on score
     if overall_score < 70:
-        # Get weaknesses for warning message
         weaknesses = analysis_results.get('areas_for_improvement', [])
         top_weaknesses = weaknesses[:3] if weaknesses else ["Writing quality needs work", "Plot structure is unclear", "Character development is shallow"]
         
@@ -464,7 +493,7 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
         server.login(SENDER_EMAIL, SENDER_PASSWORD)
         server.send_message(msg)
         
-        # Also send to editor with user's email in subject
+        # Also send to editor
         editor_msg = MIMEMultipart()
         editor_msg['From'] = SENDER_EMAIL
         editor_msg['To'] = "editor@bardspark.com"
@@ -772,9 +801,8 @@ def show_results_section():
     </div>
     """, unsafe_allow_html=True)
     
-    # Custom message based on score with updated text and link
+    # Custom message based on score
     if overall_score < 70:
-        # Get specific weaknesses to show
         weaknesses = analysis.get('areas_for_improvement', [])
         top_weaknesses = weaknesses[:3] if weaknesses else ["Writing quality needs work", "Plot structure is unclear", "Character development is shallow"]
         
@@ -790,9 +818,7 @@ def show_results_section():
                 <li>{top_weaknesses[2] if len(top_weaknesses) > 2 else "Characters need more depth"}</li>
             </ul>
         </div>
-        """, unsafe_allow_html=True)
         
-        st.markdown("""
         <div style="padding: 30px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; margin: 20px 0; color: white; text-align: center;">
             <h2>✨ Ready to improve your book?</h2>
             <p style="font-size: 18px;">Sign up for BardSpark to access:</p>
@@ -984,7 +1010,7 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
         if detected_author == "Unknown Author" and len(first_lines) > 1:
             detected_author = first_lines[1] if len(first_lines[1]) < 50 else "Unknown Author"
     
-    # GENRE CLASSIFICATION RULES (ADD THESE BEFORE THE LIST)
+    # GENRE CLASSIFICATION RULES
     genre_rules = """
     GENRE CLASSIFICATION RULES - READ CAREFULLY:
     - If the book is a personal story about the author's own life experiences → use "Memoir"
@@ -994,7 +1020,7 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
     - List them in order of relevance
     """
     
-    # ALLOWED GENRES LIST WITH DESCRIPTIONS (YOUR ORIGINAL DESCRIPTIONS - UNCHANGED)
+    # ALLOWED GENRES LIST WITH DESCRIPTIONS
     allowed_genres_text = """
     ALLOWED GENRES (use ONLY these for genre and subgenres):
     - Romance: Books centered on romantic relationships, love stories, and emotional connections between characters, often with happy endings.
