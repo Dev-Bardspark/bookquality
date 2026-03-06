@@ -1277,6 +1277,25 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
     7. For narrative arc: describe what you actually see in these excerpts
     8. Be specific - reference actual events, names, and details from the text
     9. For areas_for_improvement: be honest about weaknesses in THIS text
+
+        IMPORTANT INSTRUCTIONS:
+    ... (existing instructions) ...
+    
+    CRITICAL SCORING RULE - READ THIS:
+    If the manuscript shows ANY signs of AI generation, you MUST significantly reduce the scores.
+    AI-generated content has VERY LOW marketability because:
+    - Readers can subconsciously detect AI writing
+    - It lacks authentic human voice and emotional depth
+    - It feels generic and forgettable
+    - Book reviewers and bloggers often reject AI-generated books
+    
+    SCORING PENALTIES:
+    - For "Clearly AI-generated": Reduce overall_score by 30-40 points
+    - For "Possibly AI-assisted": Reduce overall_score by 15-20 points
+    - For "Likely human-written": No penalty
+    
+    The final score MUST reflect the market reality: AI-generated books sell poorly.
+    A "Clearly AI-generated" book should NEVER score above 60.
     
     Return JSON with these sections:
     
