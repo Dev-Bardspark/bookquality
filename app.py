@@ -29,7 +29,7 @@ USE_TLS = st.secrets.get("use_tls", True)
 def detect_ai_content(text, cover_analysis=None):
     """
     Analyze text and cover for signs of AI generation
-    Returns: dict with detection results and confidence score
+    Returns: dict with detection results
     """
     prompt = f"""
     Analyze this book manuscript excerpt and cover analysis for signs of AI generation.
@@ -61,19 +61,14 @@ def detect_ai_content(text, cover_analysis=None):
     Return JSON with:
     {{
         "text_analysis": {{
-            "ai_likelihood_score": 0-100,
-            "indicators_found": ["list of specific AI signs in the text"],
-            "human_indicators_found": ["list of human-written signs"],
-            "confidence": 0-100
+            "indicators_found": ["list of specific AI signs in the text - if none, leave empty"],
+            "human_indicators_found": ["list of human-written signs - e.g., 'unique voice', 'emotional depth', 'specific sensory details']
         }},
         "cover_analysis": {{
-            "ai_likelihood_score": 0-100,
-            "indicators_found": ["list of AI signs in cover"],
-            "confidence": 0-100
+            "indicators_found": ["list of AI signs in cover - if none, leave empty"]
         }},
         "overall_assessment": {{
-            "conclusion": "Clearly AI-generated" or "Possibly AI-assisted" or "Likely human-written" or "Inconclusive",
-            "score": 0-100,
+            "conclusion": ONE OF THESE EXACT PHRASES: "Likely human-written", "Possibly AI-assisted", "Clearly AI-generated", or "Inconclusive",
             "explanation": "Brief explanation of the determination"
         }}
     }}
@@ -83,7 +78,7 @@ def detect_ai_content(text, cover_analysis=None):
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You are an AI detection expert. Analyze text for signs of AI generation."},
+                {"role": "system", "content": "You are an AI detection expert. Analyze the text and return your conclusion using ONLY one of these exact phrases: 'Likely human-written', 'Possibly AI-assisted', 'Clearly AI-generated', or 'Inconclusive'."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.3,
@@ -96,14 +91,13 @@ def detect_ai_content(text, cover_analysis=None):
         st.error(f"AI detection failed: {e}")
         return {
             "overall_assessment": {
-                "conclusion": "Analysis unavailable",
-                "score": 50,
+                "conclusion": "Inconclusive",
                 "explanation": "AI detection could not be completed"
             }
         }
 
 def send_email(recipient_email, analysis_results, cover_analysis, book_title, author_name, ai_detection_results):
-    """Send full analysis results via email with AI detection - ALWAYS SHOWN"""
+    """Send full analysis results via email with AI detection"""
     
     subject = f"Your Complete Book Analysis: {book_title} by {author_name}"
     
@@ -116,42 +110,47 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
     grade = marketability.get('overall_grade', 'N/A')
     book_info = analysis_results.get('book_info', {})
     
-    # Get AI detection results - ALWAYS show these
+    # Get AI detection results
     ai_overall = ai_detection_results.get('overall_assessment', {})
-    ai_conclusion = ai_overall.get('conclusion', 'Analysis incomplete')
-    ai_score = ai_overall.get('score', 0)
+    ai_conclusion = ai_overall.get('conclusion', 'Inconclusive')
     ai_explanation = ai_overall.get('explanation', '')
     
     # Get text indicators
     text_indicators = ai_detection_results.get('text_analysis', {}).get('indicators_found', [])
     if not text_indicators:
-        text_indicators = ["No clear AI indicators detected", "Text appears organic", "Writing shows human variation"]
+        text_indicators = ["No clear AI indicators detected"]
     
-        # ALWAYS show the AI section - determine styling based on score
-    # INVERTED: ai_score is confidence it's AI, but we want to display the confidence it's HUMAN
-    human_confidence = 100 - ai_score
+    # Determine styling based on conclusion
+    conclusion_lower = ai_conclusion.lower()
     
-    if human_confidence >= 70:  # 70%+ confident it's HUMAN
+    if 'human' in conclusion_lower:
         ai_bg = "#e8f5e8"  # Green
         ai_border = "#4caf50"
         ai_icon = "✍️✅"
-        ai_title = f"HUMAN-GENERATED ({human_confidence}% confidence)"
+        ai_title = "HUMAN-GENERATED CONTENT"
         ai_message = "This appears to be authentically human-written"
         ai_marketing_note = "Marketing Impact: This human-written quality is valuable - it helps create authentic emotional connections with readers and can be highlighted in marketing materials."
-    elif human_confidence >= 40:  # 40-69% confident it's HUMAN (so 60-31% AI)
-        ai_bg = "#fff3e0"  # Orange
-        ai_border = "#ff9800"
-        ai_icon = "🤖❓"
-        ai_title = f"MIXED / UNCLEAR ({human_confidence}% human confidence)"
-        ai_message = "This book shows mixed signals - may have used AI assistance"
-        ai_marketing_note = "Marketing Impact: If AI was used, ensure you've added enough of your unique voice and personal experience. Books that feel generic struggle to build reader loyalty."
-    else:  # Less than 40% confident it's HUMAN (so >60% confident it's AI)
+    elif 'clearly ai' in conclusion_lower or 'ai-generated' in conclusion_lower:
         ai_bg = "#ffebee"  # Red
         ai_border = "#f44336"
         ai_icon = "🤖⚠️"
-        ai_title = f"AI DETECTED ({ai_score}% AI confidence)"
+        ai_title = "AI-GENERATED CONTENT"
         ai_message = "This book shows strong signs of AI generation"
-        ai_marketing_note = "Marketing Impact: AI-generated content often struggles to connect with readers because it lacks authentic human voice and emotional depth. Consider revising to inject more unique voice and personal anecdotes."
+        ai_marketing_note = "Marketing Impact: AI-generated content often struggles to connect with readers because it lacks authentic human voice and emotional depth. Readers can subconsciously detect when writing feels generic or lacks personal experience. Consider revising to inject more unique voice and personal anecdotes."
+    elif 'assisted' in conclusion_lower:
+        ai_bg = "#fff3e0"  # Orange
+        ai_border = "#ff9800"
+        ai_icon = "🤖❓"
+        ai_title = "POSSIBLE AI ASSISTANCE"
+        ai_message = "This book may have used AI assistance"
+        ai_marketing_note = "Marketing Impact: If AI was used, ensure you've added enough of your unique voice and personal experience. Books that feel generic struggle to build reader loyalty and word-of-mouth recommendations."
+    else:
+        ai_bg = "#f5f5f5"  # Grey
+        ai_border = "#999999"
+        ai_icon = "❓"
+        ai_title = "INCONCLUSIVE"
+        ai_message = "AI detection analysis could not determine clearly"
+        ai_marketing_note = "Marketing Impact: Consider getting a professional editorial review to assess the manuscript's authenticity and marketability."
     
     body = f"""
     <html>
@@ -175,14 +174,6 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
                 margin: 0;
                 color: #333;
             }}
-            .ai-badge {{
-                display: inline-block;
-                padding: 3px 10px;
-                background: white;
-                border-radius: 20px;
-                font-size: 14px;
-                margin-top: 5px;
-            }}
             .indicator-list {{
                 background: white;
                 padding: 15px;
@@ -205,20 +196,19 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
             <h3 style="font-size: 20px; margin: 0 0 20px 0; opacity: 0.9;">by {author_name}</h3>
         </div>
         
-        <!-- AI DETECTION SECTION - ALWAYS SHOWN PROMINENTLY -->
+        <!-- AI DETECTION SECTION -->
         <div class="ai-section">
             <div style="display: flex; align-items: center; margin-bottom: 15px;">
                 <span class="ai-icon">{ai_icon}</span>
                 <div>
                     <div class="ai-title">{ai_title}</div>
-                    <div class="ai-badge">Confidence: {ai_score}%</div>
                 </div>
             </div>
             
             <p style="font-size: 16px; margin: 10px 0;"><strong>Analysis:</strong> {ai_message}</p>
             <p style="color: #555;">{ai_explanation}</p>
             
-            <!-- Always show indicators -->
+            <!-- Show indicators -->
             <div class="indicator-list">
                 <p style="margin: 0 0 10px 0; font-weight: bold;">📊 Key Indicators:</p>
                 <ul style="margin: 0; color: #555;">
@@ -226,7 +216,7 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
                 </ul>
             </div>
             
-            <!-- Always show marketing impact -->
+            <!-- Show marketing impact -->
             <div class="marketing-impact">
                 <p style="margin: 0; font-weight: bold;">📢 Marketing Consideration:</p>
                 <p style="margin: 5px 0 0 0; color: #333;">{ai_marketing_note}</p>
@@ -740,25 +730,31 @@ def show_results_section():
     
     # Get AI detection results for display
     ai_overall = ai_detection.get('overall_assessment', {})
-    ai_conclusion = ai_overall.get('conclusion', 'Analysis incomplete')
-    ai_score = ai_overall.get('score', 0)
+    ai_conclusion = ai_overall.get('conclusion', 'Inconclusive')
     
     # Determine AI warning style
-    if ai_score >= 70:
-        ai_bg_color = "#ffebee"
-        ai_border = "#f44336"
-        ai_icon = "🤖⚠️"
-        ai_text = f"AI DETECTED ({ai_score}% confidence)"
-    elif ai_score >= 40:
-        ai_bg_color = "#fff3e0"
-        ai_border = "#ff9800"
-        ai_icon = "🤖❓"
-        ai_text = f"POSSIBLE AI ASSISTANCE ({ai_score}% confidence)"
-    else:
+    conclusion_lower = ai_conclusion.lower()
+    
+    if 'human' in conclusion_lower:
         ai_bg_color = "#e8f5e8"
         ai_border = "#4caf50"
         ai_icon = "✍️✅"
-        ai_text = f"LIKELY HUMAN-WRITTEN ({ai_score}% confidence)"
+        ai_text = "HUMAN-GENERATED CONTENT"
+    elif 'clearly ai' in conclusion_lower or 'ai-generated' in conclusion_lower:
+        ai_bg_color = "#ffebee"
+        ai_border = "#f44336"
+        ai_icon = "🤖⚠️"
+        ai_text = "AI-GENERATED CONTENT"
+    elif 'assisted' in conclusion_lower:
+        ai_bg_color = "#fff3e0"
+        ai_border = "#ff9800"
+        ai_icon = "🤖❓"
+        ai_text = "POSSIBLE AI ASSISTANCE"
+    else:
+        ai_bg_color = "#f5f5f5"
+        ai_border = "#999999"
+        ai_icon = "❓"
+        ai_text = "INCONCLUSIVE"
     
     # Color based on score
     if overall_score >= 80:
