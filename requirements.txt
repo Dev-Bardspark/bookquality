@@ -6,3 +6,5 @@ Pillow
 plotly
 nltk
 PyMuPDF
+pdf2image
+python-magic-bin
