@@ -1,4 +1,4 @@
-# BookMarketabilityChecker.py - COMPLETE FIXED VERSION
+# BookMarketabilityChecker.py - COMPLETE FIXED VERSION WITH PROPER COVER AI DETECTION
 import streamlit as st
 import openai
 import PyPDF2
@@ -25,6 +25,7 @@ SMTP_PORT = st.secrets["SMTP_PORT"]
 SENDER_EMAIL = st.secrets["SENDER_EMAIL"]
 SENDER_PASSWORD = st.secrets["SENDER_PASSWORD"]
 USE_TLS = st.secrets.get("use_tls", True)
+
 
 def analyze_cover(cover_file):
     """Full cover analysis - WITH AI DETECTION built in"""
@@ -117,6 +118,7 @@ def analyze_cover(cover_file):
         st.error(f"Cover analysis failed: {e}")
         return None
 
+
 def detect_ai_content(text, cover_analysis=None):
     """
     Analyze text and cover for signs of AI generation
@@ -126,18 +128,20 @@ def detect_ai_content(text, cover_analysis=None):
     cover_indicators = []
     cover_human = []
     cover_ai_summary = ""
+    cover_ai_detected = False
     
     if cover_analysis and 'ai_detection' in cover_analysis:
         ai_detect = cover_analysis['ai_detection']
         cover_indicators = ai_detect.get('indicators_found', [])
+        cover_ai_detected = ai_detect.get('is_ai_generated', False)
         
-        if ai_detect.get('is_ai_generated', False):
+        # Get strengths from the main cover analysis
+        cover_human = cover_analysis.get('strengths', [])[:3]
+        
+        if cover_ai_detected:
             cover_ai_summary = f"Cover appears AI-generated: {ai_detect.get('explanation', '')}"
-            cover_human = []  # NO STRENGTHS FOR AI COVERS
         else:
             cover_ai_summary = f"Cover appears human-designed: {ai_detect.get('explanation', '')}"
-            # Use strengths from the main cover analysis, NOT ai_detection
-            cover_human = cover_analysis.get('strengths', [])[:3]
     
     prompt = f"""
     Analyze this book manuscript excerpt for signs of AI generation.
@@ -147,6 +151,12 @@ def detect_ai_content(text, cover_analysis=None):
     
     COVER ANALYSIS SUMMARY:
     {cover_ai_summary}
+    
+    COVER AI INDICATORS FOUND:
+    {json.dumps(cover_indicators)}
+    
+    COVER HUMAN STRENGTHS:
+    {json.dumps(cover_human)}
     
     Look for these AI indicators in the TEXT:
     - Overuse of common AI transition phrases ("Furthermore", "Moreover", "In conclusion")
@@ -164,6 +174,7 @@ def detect_ai_content(text, cover_analysis=None):
             "human_indicators_found": ["list of human-written signs - e.g., 'unique voice', 'emotional depth']
         }},
         "cover_analysis": {{
+            "is_ai_generated": {str(cover_ai_detected).lower()},
             "indicators_found": {json.dumps(cover_indicators)},
             "human_indicators_found": {json.dumps(cover_human)}
         }},
@@ -191,12 +202,17 @@ def detect_ai_content(text, cover_analysis=None):
         st.error(f"AI detection failed: {e}")
         return {
             "text_analysis": {"indicators_found": [], "human_indicators_found": []},
-            "cover_analysis": {"indicators_found": cover_indicators, "human_indicators_found": cover_human},
+            "cover_analysis": {
+                "is_ai_generated": cover_ai_detected,
+                "indicators_found": cover_indicators,
+                "human_indicators_found": cover_human
+            },
             "overall_assessment": {
                 "conclusion": "Inconclusive",
                 "explanation": "AI detection could not be completed"
             }
         }
+
 
 def send_email(recipient_email, analysis_results, cover_analysis, book_title, author_name, ai_detection_results):
     """Send full analysis results via email with AI detection"""
@@ -221,9 +237,11 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
     text_indicators = ai_detection_results.get('text_analysis', {}).get('indicators_found', [])
     text_human_indicators = ai_detection_results.get('text_analysis', {}).get('human_indicators_found', [])
     
-    # Get cover indicators
-    cover_indicators = ai_detection_results.get('cover_analysis', {}).get('indicators_found', [])
-    cover_human_indicators = ai_detection_results.get('cover_analysis', {}).get('human_indicators_found', [])
+    # Get cover indicators - FIXED: Properly extract from the new structure
+    cover_analysis_results = ai_detection_results.get('cover_analysis', {})
+    cover_indicators = cover_analysis_results.get('indicators_found', [])
+    cover_human_indicators = cover_analysis_results.get('human_indicators_found', [])
+    cover_is_ai = cover_analysis_results.get('is_ai_generated', False)
     
     # Determine styling based on conclusion
     conclusion_lower = ai_conclusion.lower()
@@ -312,40 +330,54 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
             
             <p style="font-size: 16px; margin: 10px 0;"><strong>Analysis:</strong> {ai_message}</p>
             <p style="color: #555;">{ai_explanation}</p>
-            
-            <!-- Show text indicators -->
-            {f'''
+    """
+    
+    # Show text indicators
+    if text_indicators or text_human_indicators:
+        body += f"""
             <div class="indicator-list">
                 <p style="margin: 0 0 10px 0; font-weight: bold;">📝 Text Analysis:</p>
+        """
+        if text_indicators:
+            body += f"""
                 <ul style="margin: 0; color: #555;">
                     {''.join([f'<li style="margin: 5px 0;">{indicator}</li>' for indicator in text_indicators[:5]])}
                 </ul>
-                {f'''
+            """
+        if text_human_indicators:
+            body += f"""
                 <p style="margin: 10px 0 5px 0; font-weight: bold;">✨ Human Qualities:</p>
                 <ul style="margin: 0; color: #555;">
                     {''.join([f'<li style="margin: 5px 0;">{indicator}</li>' for indicator in text_human_indicators[:3]])}
                 </ul>
-                ''' if text_human_indicators else ''}
-            </div>
-            ''' if text_indicators or text_human_indicators else ''}
-            
-            <!-- Show cover indicators - FIXED: THIS IS NOW ACTUALLY HERE -->
-            {f'''
+            """
+        body += "</div>"
+    
+    # Show cover indicators - FIXED: This is now properly populated
+    if cover_indicators or cover_human_indicators:
+        body += f"""
             <div class="indicator-list">
                 <p style="margin: 0 0 10px 0; font-weight: bold;">🎨 Cover Analysis:</p>
+        """
+        if cover_indicators:
+            ai_badge = "🤖 AI-GENERATED" if cover_is_ai else ""
+            body += f"""
+                <p style="margin: 5px 0; font-weight: bold;">{ai_badge}</p>
                 <ul style="margin: 0; color: #555;">
-                    {''.join([f'<li style="margin: 5px 0;">{indicator}</li>' for indicator in cover_indicators[:5]])}
+                    {''.join([f'<li style="margin: 5px 0;">⚠️ {indicator}</li>' for indicator in cover_indicators[:5]])}
                 </ul>
-                {f'''
+            """
+        if cover_human_indicators:
+            body += f"""
                 <p style="margin: 10px 0 5px 0; font-weight: bold;">✨ Cover Strengths:</p>
                 <ul style="margin: 0; color: #555;">
-                    {''.join([f'<li style="margin: 5px 0;">{indicator}</li>' for indicator in cover_human_indicators[:3]])}
+                    {''.join([f'<li style="margin: 5px 0;">✅ {indicator}</li>' for indicator in cover_human_indicators[:3]])}
                 </ul>
-                ''' if cover_human_indicators else ''}
-            </div>
-            ''' if cover_indicators or cover_human_indicators else ''}
-            
-            <!-- Show marketing impact -->
+            """
+        body += "</div>"
+    
+    # Show marketing impact
+    body += f"""
             <div class="marketing-impact">
                 <p style="margin: 0; font-weight: bold;">📢 Marketing Consideration:</p>
                 <p style="margin: 5px 0 0 0; color: #333;">{ai_marketing_note}</p>
@@ -636,6 +668,7 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
         st.error(f"Email sending failed: {e}")
         return False
 
+
 def show_marketability_checker():
     """Marketability checker that delivers FULL analysis via email"""
     
@@ -760,6 +793,7 @@ def show_marketability_checker():
     else:
         show_results_section()
 
+
 def show_upload_section():
     """Show file upload interface"""
     
@@ -817,7 +851,7 @@ def show_upload_section():
     if manuscript and email:
         if st.button("🔍 GET MY FREE ANALYSIS", type="primary", use_container_width=True):
             with st.spinner("Analyzing your book... (about 60 seconds)"):
-                       
+                
                 # Use pre-extracted text
                 text = st.session_state.text
                 
@@ -830,6 +864,7 @@ def show_upload_section():
                 # Run AI detection first
                 ai_detection = detect_ai_content(text, cover_analysis)
                 st.session_state.ai_detection = ai_detection
+                
                 # 🔍 DEBUG: Print what the AI detection returned
                 st.write("🔍 DEBUG - AI Detection Results:")
                 st.json(ai_detection)
@@ -862,6 +897,7 @@ def show_upload_section():
             st.info("👆 Please upload your manuscript")
         elif not email:
             st.info("👆 Please enter your email address")
+
 
 def show_results_section():
     """Show results with preview and low score warning if needed"""
@@ -996,6 +1032,7 @@ def show_results_section():
     
     st.success(f"✅ We've sent your complete analysis to your email!")
 
+
 def extract_text_for_analysis(file):
     """Extract text for analysis only - simplified version"""
     try:
@@ -1046,6 +1083,7 @@ def extract_text_for_analysis(file):
     except Exception as e:
         st.error(f"Error extracting text for analysis: {e}")
         return ""
+
 
 def analyze_book_complete(text, cover_analysis, provided_title="", provided_author=""):
     """Complete book analysis based on ACTUAL manuscript text"""
@@ -1285,6 +1323,7 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
     except Exception as e:
         st.error(f"Analysis failed: {str(e)}")
         return None
+
 
 # For running standalone
 if __name__ == "__main__":
