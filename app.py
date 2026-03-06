@@ -127,31 +127,31 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
     if not text_indicators:
         text_indicators = ["No clear AI indicators detected", "Text appears organic", "Writing shows human variation"]
     
-    # ALWAYS show the AI section - determine styling based on score
-    # ai_score = confidence that it's AI-generated (higher = more likely AI)
-    if ai_score >= 70:
-        ai_bg = "#ffebee"
-        ai_border = "#f44336"
-        ai_icon = "🤖⚠️"
-        ai_title = f"AI DETECTED ({ai_score}% confidence)"
-        ai_message = "This book shows strong signs of AI generation"
-        ai_marketing_note = "Marketing Impact: AI-generated content often struggles to connect with readers because it lacks authentic human voice and emotional depth. Readers can subconsciously detect when writing feels generic or lacks personal experience. Consider revising to inject more unique voice and personal anecdotes."
-    elif ai_score >= 40:
-        ai_bg = "#fff3e0"
-        ai_border = "#ff9800"
-        ai_icon = "🤖❓"
-        ai_title = f"POSSIBLE AI ASSISTANCE ({ai_score}% confidence)"
-        ai_message = "This book may have used AI assistance"
-        ai_marketing_note = "Marketing Impact: If AI was used, ensure you've added enough of your unique voice and personal experience. Books that feel generic struggle to build reader loyalty and word-of-mouth recommendations."
-    else:
-        ai_bg = "#e8f5e8"
+        # ALWAYS show the AI section - determine styling based on score
+    # INVERTED: ai_score is confidence it's AI, but we want to display the confidence it's HUMAN
+    human_confidence = 100 - ai_score
+    
+    if human_confidence >= 70:  # 70%+ confident it's HUMAN
+        ai_bg = "#e8f5e8"  # Green
         ai_border = "#4caf50"
         ai_icon = "✍️✅"
-        # For low AI scores, show human confidence as 100 - ai_score
-        human_confidence = 100 - ai_score
         ai_title = f"HUMAN-GENERATED ({human_confidence}% confidence)"
         ai_message = "This appears to be authentically human-written"
         ai_marketing_note = "Marketing Impact: This human-written quality is valuable - it helps create authentic emotional connections with readers and can be highlighted in marketing materials."
+    elif human_confidence >= 40:  # 40-69% confident it's HUMAN (so 60-31% AI)
+        ai_bg = "#fff3e0"  # Orange
+        ai_border = "#ff9800"
+        ai_icon = "🤖❓"
+        ai_title = f"MIXED / UNCLEAR ({human_confidence}% human confidence)"
+        ai_message = "This book shows mixed signals - may have used AI assistance"
+        ai_marketing_note = "Marketing Impact: If AI was used, ensure you've added enough of your unique voice and personal experience. Books that feel generic struggle to build reader loyalty."
+    else:  # Less than 40% confident it's HUMAN (so >60% confident it's AI)
+        ai_bg = "#ffebee"  # Red
+        ai_border = "#f44336"
+        ai_icon = "🤖⚠️"
+        ai_title = f"AI DETECTED ({ai_score}% AI confidence)"
+        ai_message = "This book shows strong signs of AI generation"
+        ai_marketing_note = "Marketing Impact: AI-generated content often struggles to connect with readers because it lacks authentic human voice and emotional depth. Consider revising to inject more unique voice and personal anecdotes."
     
     body = f"""
     <html>
