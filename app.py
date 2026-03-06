@@ -1171,7 +1171,7 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
     
     cover_text = ""
     if cover_analysis:
-        cover_text = f"\nCOVER ANALYSIS:\n{json.dumps(cover_analysis, indent=2)}"
+        cover_text = f"\nCOVER ANALYSIS:\n{json.dumps(cover_analysis, indent
     
     # Extract title and author from first few lines if not provided
     if provided_title and provided_author:
