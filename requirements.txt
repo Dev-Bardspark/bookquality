@@ -3,8 +3,6 @@ streamlit
 PyPDF2
 python-docx
 Pillow
-plotly
-nltk
 PyMuPDF
 pdf2image
-python-magic
+filetype
