@@ -1,4 +1,4 @@
-# BookMarketabilityChecker.py - COMPLETE FIXED VERSION WITH PNG-ONLY COVER DETECTOR
+# BookMarketabilityChecker.py - COMPLETE WORKING VERSION
 import streamlit as st
 import openai
 import PyPDF2
@@ -14,10 +14,11 @@ from datetime import datetime
 import re
 import zipfile
 from xml.etree import ElementTree
+import fitz  # PyMuPDF for PDF cover extraction
 import tempfile
 import os
 
-# Import the PNG-only cover detector (YOUR PERFECT SCRIPT)
+# Import your PERFECT PNG-only cover detector
 import ai_cover_detector_gpt4o_mini_png_only as ai_cover
 
 # Initialize OpenAI with secrets
@@ -31,28 +32,23 @@ SENDER_PASSWORD = st.secrets["SENDER_PASSWORD"]
 USE_TLS = st.secrets.get("use_tls", True)
 
 def analyze_cover(cover_file):
-    """
-    Full cover analysis using the PERFECT PNG-only detector
-    NO CONVERSION - only accepts PNG files directly
-    """
+    """Cover analysis using your PERFECT PNG-only detector"""
     try:
-        # Check if it's actually a PNG
+        # Check if it's a PNG
         if cover_file.type != "image/png" and not cover_file.name.lower().endswith('.png'):
-            st.error("❌ ONLY PNG FILES ARE ACCEPTED FOR COVER ANALYSIS")
-            st.info("Please convert your image to PNG first (Paint, GIMP, or online converters)")
+            st.error("❌ ONLY PNG FILES ARE ACCEPTED")
+            st.info("Please convert your image to PNG first")
             return None
         
-        # Get the PNG bytes directly - NO CONVERSION
+        # Get PNG bytes
         png_bytes = cover_file.getvalue()
+        st.success("✅ PNG file accepted")
         
-        # Show what we're doing
-        st.success("✅ PNG file accepted - analyzing...")
-        
-        # Detect AI using your PERFECT function
+        # Detect AI using your function
         ai_detection_json = ai_cover.detect_ai_cover(png_bytes)
         ai_detection_result = json.loads(ai_detection_json)
         
-        # Also get style analysis (this is separate from AI detection)
+        # Style analysis
         cover_base64 = base64.b64encode(png_bytes).decode('utf-8')
         
         style_prompt = """Analyze this book cover's design elements. Return JSON with:
@@ -92,7 +88,7 @@ def analyze_cover(cover_file):
         
         style_result = json.loads(style_response.choices[0].message.content)
         
-        # Combine both analyses
+        # Combine
         result = {
             **style_result,
             "ai_detection": {
@@ -112,36 +108,24 @@ def analyze_cover(cover_file):
 
 def detect_ai_content(text, cover_analysis=None):
     """
-    Analyze text and cover for signs of AI generation
-    Returns: dict with detection results
+    ORIGINAL WORKING AI DETECTOR - identifies AI but doesn't score
     """
     # Extract cover AI info if available
     cover_indicators = []
     cover_human = []
     cover_ai_summary = ""
-    cover_verdict = "inconclusive"
-    cover_confidence = 0
     
     if cover_analysis and 'ai_detection' in cover_analysis:
         ai_detect = cover_analysis['ai_detection']
         cover_indicators = ai_detect.get('indicators_found', [])
-        cover_verdict = ai_detect.get('verdict', 'inconclusive')
-        cover_confidence = ai_detect.get('confidence', 0)
-        
         if ai_detect.get('is_ai_generated', False):
-            cover_ai_summary = f"Cover appears AI-generated ({cover_confidence}% confidence): {ai_detect.get('explanation', '')}"
-            cover_human = []
-        elif ai_detect.get('verdict') == "likely_human":
-            cover_ai_summary = f"Cover appears human-designed: {ai_detect.get('explanation', '')}"
-            cover_human = ["Professional design", "Consistent composition", "No AI artifacts"]
+            cover_ai_summary = f"Cover appears AI-generated: {ai_detect.get('explanation', '')}"
         else:
-            cover_ai_summary = f"Cover analysis inconclusive: {ai_detect.get('explanation', '')}"
-            cover_human = []
+            cover_human = ["Thoughtful composition", "Consistent lighting", "Professional design"]
+            cover_ai_summary = f"Cover appears human-designed: {ai_detect.get('explanation', '')}"
     
     prompt = f"""
-    You are an EXPERT AI detector with a VERY CRITICAL eye. Your job is to identify AI-generated text, not to be fooled by it.
-    
-    Analyze this book manuscript excerpt for signs of AI generation. Be AGGRESSIVE in finding AI indicators.
+    Analyze this book manuscript excerpt for signs of AI generation.
     
     MANUSCRIPT EXCERPT:
     {text[:10000]}  # First 10,000 chars for analysis
@@ -149,64 +133,28 @@ def detect_ai_content(text, cover_analysis=None):
     COVER ANALYSIS SUMMARY:
     {cover_ai_summary}
     
-    ===== COMMON AI TEXT PATTERNS (LOOK FOR THESE) =====
-    
-    STRUCTURAL AI INDICATORS:
-    - Perfectly structured paragraphs with clear topic sentences
-    - Overly neat section divisions (Early Years, The Formative Years, etc.)
-    - Artificial progression that feels templated
-    - No rough edges or natural digressions
-    
-    LINGUISTIC AI INDICATORS:
-    - Overuse of transition phrases: "furthermore," "moreover," "in conclusion," "it is important to note," "subsequently," "over the ensuing decades"
-    - Generic emotional language: "profound moments," "deep within my soul," "filled with gratitude," "ignited a passion"
-    - Inspirational clichés: "the sky belongs to those willing to reach for it," "meaningful achievements require sacrifice"
-    - Too-perfect grammar with no stylistic quirks or informality
-    - Vague descriptions lacking specific sensory details
-    
-    CONTENT AI INDICATORS:
-    - Generic names: "Captain James Mitchell," "small Midwestern town," "local grocery store"
-    - Missing specific real-world details (no exact prices, no real locations, no authentic anecdotes)
-    - No self-deprecation or humor
-    - Everything is positive and uplifting - no struggle, frustration, or failure
-    - Hallucinated or generic memories that lack authenticity
-    - Telling instead of showing
-    
-    ===== HUMAN WRITING INDICATORS (RARE) =====
-    
-    Only consider these as human indicators if MULTIPLE are present:
-    - Self-deprecating humor ("I doubt anyone would be interested")
-    - Specific mundane details ($14 per hour, Volkswagen broke down, couldn't pay the bill)
-    - Natural digressions and tangents that break the narrative flow
-    - Understatement ("I had some adventures but I won't go into them")
-    - Imperfect grammar or sentence fragments that reflect authentic voice
-    - Specific real names, places, dates, and prices
-    - Complaints, frustrations, or negative experiences
-    - Rambling that feels unpolished and真实
-    
-    ===== DECISION RULES =====
-    - "Clearly AI-generated": Multiple AI indicators present, few to no human indicators
-    - "Possibly AI-assisted": Mix of AI patterns and some human elements
-    - "Likely human-written": Strong human indicators throughout, few AI patterns
-    - "Inconclusive": Unclear or insufficient evidence
-    
-    Be CONSERVATIVE about calling something human. If the text reads like a polished memoir with generic emotional language and no specific details, flag it as AI.
+    Look for these AI indicators in the TEXT:
+    - Overuse of common AI transition phrases ("Furthermore", "Moreover", "In conclusion", "It is important to note")
+    - Repetitive sentence structures
+    - Generic descriptions lacking specific sensory details
+    - Predictable dialogue patterns
+    - Lack of authentic voice or personality
+    - Hallucinated facts or inconsistencies
+    - Too "perfect" grammar with no stylistic quirks
     
     Return JSON with:
     {{
         "text_analysis": {{
-            "indicators_found": ["list specific AI patterns found in the text - be thorough and quote examples if possible"],
-            "human_indicators_found": ["list specific human patterns found - be critical and only include genuine markers"]
+            "indicators_found": ["list of specific AI signs in the text - if none, leave empty"],
+            "human_indicators_found": ["list of human-written signs - e.g., 'unique voice', 'emotional depth', 'specific sensory details']
         }},
         "cover_analysis": {{
             "indicators_found": {json.dumps(cover_indicators)},
-            "human_indicators_found": {json.dumps(cover_human)},
-            "verdict": "{cover_verdict}",
-            "confidence": {cover_confidence}
+            "human_indicators_found": {json.dumps(cover_human)}
         }},
         "overall_assessment": {{
-            "conclusion": ONE OF THESE EXACT PHRASES: "Clearly AI-generated", "Possibly AI-assisted", "Likely human-written", or "Inconclusive",
-            "explanation": "Detailed explanation with specific textual evidence supporting your conclusion"
+            "conclusion": ONE OF THESE EXACT PHRASES: "Likely human-written", "Possibly AI-assisted", "Clearly AI-generated", or "Inconclusive",
+            "explanation": "Brief explanation of the determination including both text and cover analysis if available"
         }}
     }}
     """
@@ -215,10 +163,10 @@ def detect_ai_content(text, cover_analysis=None):
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You are an expert AI detector with a critical eye. You do not get fooled by polished writing. You look for the subtle patterns that distinguish AI from authentic human voice. Be aggressive in finding AI indicators and conservative about calling something human."},
+                {"role": "system", "content": "You are an AI detection expert. Analyze the text and return your conclusion using ONLY one of these exact phrases: 'Likely human-written', 'Possibly AI-assisted', 'Clearly AI-generated', or 'Inconclusive'."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.2,  # Lower temperature for more consistent, critical responses
+            temperature=0.3,
             max_tokens=1000,
             response_format={"type": "json_object"}
         )
@@ -228,17 +176,200 @@ def detect_ai_content(text, cover_analysis=None):
         st.error(f"AI detection failed: {e}")
         return {
             "text_analysis": {"indicators_found": [], "human_indicators_found": []},
-            "cover_analysis": {
-                "indicators_found": cover_indicators, 
-                "human_indicators_found": cover_human,
-                "verdict": cover_verdict,
-                "confidence": cover_confidence
-            },
+            "cover_analysis": {"indicators_found": cover_indicators, "human_indicators_found": cover_human},
             "overall_assessment": {
                 "conclusion": "Inconclusive",
                 "explanation": "AI detection could not be completed"
             }
         }
+
+def analyze_book_complete(text, cover_analysis, provided_title="", provided_author="", ai_verdict=None):
+    """
+    Complete book analysis with AI verdict-based penalty
+    """
+    if len(text) > 50000:
+        text = text[:50000] + "... [truncated]"
+    
+    total_len = len(text)
+    beginning = text[:min(5000, total_len//3)]
+    middle = text[total_len//3:total_len//3*2][:5000]
+    ending = text[-5000:]
+    
+    cover_text = ""
+    if cover_analysis:
+        cover_text = f"\nCOVER ANALYSIS:\n{json.dumps(cover_analysis, indent=2)}"
+    
+    # Extract title and author
+    if provided_title and provided_author:
+        detected_title = provided_title
+        detected_author = provided_author
+    else:
+        first_lines = [line.strip() for line in text[:1000].split('\n') if line.strip()]
+        detected_title = "Unknown Title"
+        detected_author = "Unknown Author"
+        
+        for i, line in enumerate(first_lines):
+            if re.match(r'https?://', line) or len(line) < 5:
+                continue
+            if i == 0:
+                detected_title = line
+            if 'by' in line.lower() and len(line) < 100:
+                detected_author = re.sub(r'(?i)by', '', line).strip()
+                break
+        if detected_author == "Unknown Author" and len(first_lines) > 1:
+            detected_author = first_lines[1] if len(first_lines[1]) < 50 else "Unknown Author"
+    
+    # Genre rules
+    genre_rules = """
+    GENRE CLASSIFICATION RULES:
+    - If personal story about author's own life → use "Memoir"
+    - "Non-Fiction" ONLY for encyclopedias, textbooks, how-to books
+    - DO NOT use "Non-Fiction" for memoirs
+    - You can select MULTIPLE genres
+    """
+    
+    allowed_genres_text = """
+    ALLOWED GENRES (use ONLY these):
+    - Romance, Fantasy, Romantasy, Science Fiction, Mystery, Thriller, Horror
+    - Young Adult, Historical Fiction, Contemporary Fiction, Literary Fiction
+    - Children's, Middle Grade, Non-Fiction, Memoir, Biography, Autobiography
+    - Self-Help, LGBTQ+ Fiction, Paranormal, Graphic Novels, Comics
+    - Classics, Erotica
+    """
+    
+    prompt = f"""
+    You are a professional literary analyst. Analyze THIS SPECIFIC BOOK based on the manuscript excerpts below.
+    
+    BOOK TITLE: {detected_title}
+    AUTHOR: {detected_author}
+    
+    {cover_text}
+    
+    {genre_rules}
+    {allowed_genres_text}
+    
+    EXCERPTS:
+    BEGINNING: {beginning}
+    MIDDLE: {middle}
+    ENDING: {ending}
+    
+    Return JSON with marketability analysis.
+    Score each category 0-100 based on writing quality, commercial potential, etc.
+    
+    Return JSON with these sections:
+    {{
+        "marketability": {{
+            "overall_score": (0-100),
+            "overall_grade": ("A", "B", "C", "D", "F" with +/-),
+            "overall_assessment": "One sentence summary",
+            "scores": {{
+                "writing_quality": {{"score": 0-100, "explanation": ""}},
+                "commercial_potential": {{"score": 0-100, "explanation": ""}},
+                "genre_fit": {{"score": 0-100, "explanation": ""}},
+                "hook_strength": {{"score": 0-100, "explanation": ""}},
+                "character_appeal": {{"score": 0-100, "explanation": ""}},
+                "pacing": {{"score": 0-100, "explanation": ""}},
+                "originality": {{"score": 0-100, "explanation": ""}}
+            }}
+        }},
+        "writing_quality_detailed": {{
+            "prose_quality": "",
+            "dialogue": "",
+            "description": "",
+            "voice": "",
+            "technical_execution": ""
+        }},
+        "book_info": {{
+            "title": "{detected_title}",
+            "author": "{detected_author}",
+            "genres": [],
+            "tone": "",
+            "writing_style": "",
+            "pacing_summary": ""
+        }},
+        "characters": {{
+            "main": [],
+            "supporting": [],
+            "relationships": []
+        }},
+        "character_development": {{
+            "protagonist_journey": "",
+            "antagonist_motivation": "",
+            "supporting_arcs": []
+        }},
+        "narrative_arc": {{
+            "exposition": "",
+            "rising_action": "",
+            "climax": "",
+            "falling_action": "",
+            "resolution": ""
+        }},
+        "plot": {{
+            "opening_hook": "",
+            "inciting_incident": "",
+            "major_plot_points": [],
+            "plot_twists": []
+        }},
+        "themes": {{
+            "primary": [],
+            "secondary": []
+        }},
+        "strengths": [],
+        "areas_for_improvement": [],
+        "target_audience": {{
+            "primary": "",
+            "appeal": ""
+        }},
+        "marketing": {{
+            "unique_selling_points": [],
+            "blurb_suggestion": ""
+        }}
+    }}
+    """
+    
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a literary analyst. Return valid JSON only."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.4,
+            max_tokens=4000,
+            response_format={"type": "json_object"}
+        )
+        
+        result = json.loads(response.choices[0].message.content)
+        
+        # Apply AI penalty if needed
+        if ai_verdict:
+            if ai_verdict == "Clearly AI-generated":
+                # Severe penalty
+                current = result['marketability']['overall_score']
+                result['marketability']['overall_score'] = max(30, min(50, current - 40))
+                result['marketability']['overall_grade'] = 'D'
+                if 'areas_for_improvement' in result:
+                    result['areas_for_improvement'].insert(0, "⚠️ Content shows clear signs of AI generation - needs authentic human voice")
+                
+            elif ai_verdict == "Possibly AI-assisted":
+                # Moderate penalty
+                current = result['marketability']['overall_score']
+                result['marketability']['overall_score'] = max(50, min(65, current - 20))
+                if 'areas_for_improvement' in result:
+                    result['areas_for_improvement'].insert(0, "May have used AI assistance - needs more authentic voice")
+        
+        # Ensure title and author
+        if 'book_info' not in result:
+            result['book_info'] = {}
+        result['book_info']['title'] = detected_title
+        result['book_info']['author'] = detected_author
+        
+        return result
+        
+    except Exception as e:
+        st.error(f"Analysis failed: {str(e)}")
+        return None
+
 def send_email(recipient_email, analysis_results, cover_analysis, book_title, author_name, ai_detection_results):
     """Send full analysis results via email with AI detection"""
     
@@ -262,7 +393,7 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
     text_indicators = ai_detection_results.get('text_analysis', {}).get('indicators_found', [])
     text_human_indicators = ai_detection_results.get('text_analysis', {}).get('human_indicators_found', [])
     
-    # Get cover indicators with verdict and confidence
+    # Get cover indicators
     cover_data = ai_detection_results.get('cover_analysis', {})
     cover_indicators = cover_data.get('indicators_found', [])
     cover_human_indicators = cover_data.get('human_indicators_found', [])
@@ -273,33 +404,33 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
     conclusion_lower = ai_conclusion.lower()
     
     if 'human' in conclusion_lower:
-        ai_bg = "#e8f5e8"  # Green
+        ai_bg = "#e8f5e8"
         ai_border = "#4caf50"
         ai_icon = "✍️✅"
         ai_title = "HUMAN-GENERATED CONTENT"
         ai_message = "This appears to be authentically human-written"
         ai_marketing_note = "Marketing Impact: This human-written quality is valuable - it helps create authentic emotional connections with readers and can be highlighted in marketing materials."
     elif 'clearly ai' in conclusion_lower or 'ai-generated' in conclusion_lower:
-        ai_bg = "#ffebee"  # Red
+        ai_bg = "#ffebee"
         ai_border = "#f44336"
         ai_icon = "🤖⚠️"
         ai_title = "AI-GENERATED CONTENT"
         ai_message = "This book shows strong signs of AI generation"
-        ai_marketing_note = "Marketing Impact: AI-generated content often struggles to connect with readers because it lacks authentic human voice and emotional depth. Readers can subconsciously detect when writing feels generic or lacks personal experience. Consider revising to inject more unique voice and personal anecdotes."
+        ai_marketing_note = "Marketing Impact: AI-generated content often struggles to connect with readers because it lacks authentic human voice and emotional depth. Consider revising to inject more unique voice and personal anecdotes."
     elif 'assisted' in conclusion_lower:
-        ai_bg = "#fff3e0"  # Orange
+        ai_bg = "#fff3e0"
         ai_border = "#ff9800"
         ai_icon = "🤖❓"
         ai_title = "POSSIBLE AI ASSISTANCE"
         ai_message = "This book may have used AI assistance"
-        ai_marketing_note = "Marketing Impact: If AI was used, ensure you've added enough of your unique voice and personal experience. Books that feel generic struggle to build reader loyalty and word-of-mouth recommendations."
+        ai_marketing_note = "Marketing Impact: If AI was used, ensure you've added enough of your unique voice and personal experience."
     else:
-        ai_bg = "#f5f5f5"  # Grey
+        ai_bg = "#f5f5f5"
         ai_border = "#999999"
         ai_icon = "❓"
         ai_title = "INCONCLUSIVE"
         ai_message = "AI detection analysis could not determine clearly"
-        ai_marketing_note = "Marketing Impact: Consider getting a professional editorial review to assess the manuscript's authenticity and marketability."
+        ai_marketing_note = "Marketing Impact: Consider getting a professional editorial review to assess the manuscript's authenticity."
     
     # Build cover verdict display
     if cover_verdict == "likely_ai":
@@ -496,7 +627,6 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
         score_value = score_data.get('score', 0)
         explanation = score_data.get('explanation', '')
         
-        # Color code the bar
         if score_value >= 80:
             bar_color = "#00cc66"
         elif score_value >= 70:
@@ -581,7 +711,7 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
         </div>
         """
     
-    # Cover analysis style details (if available)
+    # Cover analysis style details
     if cover_analysis:
         body += f"""
         <div style="padding: 20px; background: #f8f9fa; border-radius: 10px; margin-top: 20px;">
@@ -945,18 +1075,21 @@ def show_upload_section():
                 ai_detection = detect_ai_content(text, cover_analysis)
                 st.session_state.ai_detection = ai_detection
                 
-                # Analyze manuscript (FULL analysis)
-                analysis = analyze_book_complete(text, cover_analysis, book_title, author_name)
+                # Get verdict for penalty
+                ai_verdict = ai_detection.get('overall_assessment', {}).get('conclusion')
+                
+                # Analyze manuscript with penalty
+                analysis = analyze_book_complete(text, cover_analysis, book_title, author_name, ai_verdict)
                 
                 if analysis:
                     st.session_state.analysis_result = analysis
                     
-                    # Get book title and author (use provided or detected)
+                    # Get book title and author
                     book_info = analysis.get('book_info', {})
                     final_title = book_info.get('title', 'Your Book')
                     final_author = book_info.get('author', 'Unknown Author')
                     
-                    # Send email with AI detection results
+                    # Send email
                     email_sent = send_email(email, analysis, cover_analysis, final_title, final_author, ai_detection)
                     
                     if email_sent:
@@ -1108,21 +1241,21 @@ def show_results_section():
     st.success(f"✅ We've sent your complete analysis to your email!")
 
 def extract_text_for_analysis(file):
-    """Extract text for analysis only - simplified version"""
+    """Extract text for analysis only"""
     try:
         file_bytes = file.getvalue()
         
         if file.type == "application/pdf":
             pdf_reader = PyPDF2.PdfReader(io.BytesIO(file_bytes))
             text = ""
-            for page in pdf_reader.pages[:20]:  # First 20 pages for analysis
+            for page in pdf_reader.pages[:20]:
                 text += page.extract_text() + "\n"
             return text[:50000]
             
         elif file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
             doc = docx.Document(io.BytesIO(file_bytes))
             text = ""
-            for para in doc.paragraphs[:1000]:  # First 1000 paragraphs for analysis
+            for para in doc.paragraphs[:1000]:
                 text += para.text + "\n"
             return text[:50000]
             
@@ -1151,282 +1284,12 @@ def extract_text_for_analysis(file):
         elif file.type == "application/msword":
             return file_bytes.decode("utf-8", errors="ignore")[:50000]
         
-        else:  # Plain text
+        else:
             return file_bytes.decode("utf-8", errors="ignore")[:50000]
             
     except Exception as e:
-        st.error(f"Error extracting text for analysis: {e}")
+        st.error(f"Error extracting text: {e}")
         return ""
 
-def analyze_book_complete(text, cover_analysis, provided_title="", provided_author=""):
-    """Complete book analysis based on ACTUAL manuscript text"""
-    
-    if len(text) > 50000:
-        text = text[:50000] + "... [truncated]"
-    
-    total_len = len(text)
-    beginning = text[:min(5000, total_len//3)]
-    middle = text[total_len//3:total_len//3*2][:5000]
-    ending = text[-5000:]
-    
-    cover_text = ""
-    if cover_analysis:
-        cover_text = f"\nCOVER ANALYSIS:\n{json.dumps(cover_analysis, indent=2)}"
-    
-    # Extract title and author from first few lines if not provided
-    if provided_title and provided_author:
-        detected_title = provided_title
-        detected_author = provided_author
-    else:
-        first_lines = [line.strip() for line in text[:1000].split('\n') if line.strip()]
-        detected_title = "Unknown Title"
-        detected_author = "Unknown Author"
-        
-        # Improved detection: skip lines that look like URLs or empty
-        for i, line in enumerate(first_lines):
-            if re.match(r'https?://', line) or len(line) < 5:
-                continue
-            if i == 0:
-                detected_title = line
-            if 'by' in line.lower() and len(line) < 100:
-                detected_author = re.sub(r'(?i)by', '', line).strip()
-                break
-        # Fallback if no 'by'
-        if detected_author == "Unknown Author" and len(first_lines) > 1:
-            detected_author = first_lines[1] if len(first_lines[1]) < 50 else "Unknown Author"
-    
-    # GENRE CLASSIFICATION RULES
-    genre_rules = """
-    GENRE CLASSIFICATION RULES - READ CAREFULLY:
-    - If the book is a personal story about the author's own life experiences → use "Memoir"
-    - "Non-Fiction" is ONLY for encyclopedias, textbooks, how-to books, informational guides
-    - DO NOT use "Non-Fiction" for memoirs, biographies, or autobiographies
-    - You can select MULTIPLE genres that fit (e.g., a memoir could also be LGBTQ+ Fiction)
-    - List them in order of relevance
-    """
-    
-    # ALLOWED GENRES LIST WITH DESCRIPTIONS
-    allowed_genres_text = """
-    ALLOWED GENRES (use ONLY these for genre and subgenres):
-    - Romance: Books centered on romantic relationships, love stories, and emotional connections between characters, often with happy endings.
-    - Fantasy: Stories involving magic, mythical creatures, imaginary worlds, quests, or supernatural elements.
-    - Romantasy: A hybrid of romance and fantasy, blending deep romantic relationships with magical worlds, epic quests, and supernatural elements.
-    - Science Fiction: Speculative stories exploring futuristic technology, space exploration, alternate realities, dystopias, or scientific concepts.
-    - Mystery: Narratives built around solving a puzzle, crime, or secret, usually featuring investigation and revelation.
-    - Thriller: Fast-paced, suspenseful stories designed to create tension, danger, and excitement, often with high stakes.
-    - Horror: Stories intended to frighten, disturb, or unsettle readers through fear, the supernatural, or psychological terror.
-    - Young Adult: Fiction aimed at teenagers (roughly ages 12–18), typically featuring coming-of-age themes, identity, and first experiences.
-    - Historical Fiction: Stories set in the past that blend real historical events or settings with fictional characters and plots.
-    - Contemporary Fiction: Modern-day stories focusing on realistic characters, relationships, and everyday life issues.
-    - Literary Fiction: Character-driven, introspective stories that emphasize style, language, themes, and emotional depth over plot.
-    - Children's: Books written for young children, usually with simple language, illustrations, and moral lessons.
-    - Middle Grade: Stories for ages 8–12, often featuring adventure, friendship, family, school life, or light fantasy.
-    - Non-Fiction: Factual writing covering real events, people, ideas, or information. (ONLY for informational books, NOT personal memoirs)
-    - Memoir: Personal, true accounts of the author's own experiences, usually focused on specific themes or periods of life.
-    - Biography: A detailed account of a real person's life, written by someone else, based on research and sources.
-    - Autobiography: A full, chronological account of the author's own entire life, written by the person themselves.
-    - Self-Help: Practical books offering advice, strategies, or guidance for personal improvement, success, health, or happiness.
-    - LGBTQ+ Fiction: Stories that center queer characters, identities, relationships, and experiences.
-    - Paranormal: Fiction involving ghosts, vampires, werewolves, psychics, or other supernatural phenomena.
-    - Graphic Novels: Long-form stories told through sequential art and text, similar in length and complexity to novels.
-    - Comics: Shorter or serialized stories told through panels and illustrations, often in series or anthologies.
-    - Classics: Timeless, influential works of literature that have enduring cultural or literary significance.
-    - Erotica: Fiction that focuses explicitly on sexual desire, arousal, and intimate encounters.
-    
-    IMPORTANT: Genre and subgenres MUST be chosen ONLY from this list. DO NOT invent genres.
-    You can select MULTIPLE genres that fit the book.
-    """
-    
-    prompt = f"""
-    You are a professional literary analyst. Analyze THIS SPECIFIC BOOK based SOLELY on the manuscript excerpts provided below.
-    
-    BOOK TITLE (detected from manuscript): {detected_title}
-    AUTHOR (detected from manuscript): {detected_author}
-    
-    {cover_text}
-    
-    {genre_rules}
-    
-    {allowed_genres_text}
-    
-    ACTUAL MANUSCRIPT EXCERPTS - USE THESE FOR YOUR ANALYSIS:
-    
-    BEGINNING (first 5000 chars):
-    {beginning}
-    
-    MIDDLE (middle 5000 chars):
-    {middle}
-    
-    ENDING (last 5000 chars):
-    {ending}
-    
-    IMPORTANT INSTRUCTIONS:
-    1. The book title MUST be "{detected_title}" in your response
-    2. The author MUST be "{detected_author}" in your response
-    3. Base ALL scores and comments on the ACTUAL text above
-    4. For characters: You MUST identify ALL characters mentioned in the excerpts. For each main character, include:
-       - Their name
-       - Their role (protagonist, antagonist, deuteragonist, confidant, foil, love interest, mentor, etc.)
-       - Description of who they are
-       - How they change (if shown)
-       - What drives them
-       - Their internal or external struggles
-       - Why readers will connect with them
-    5. Include supporting characters and key relationships between characters
-    6. For character_development section, describe how the protagonist evolves, what motivates any antagonist, and how supporting characters change
-    7. For narrative arc: describe what you actually see in these excerpts
-    8. Be specific - reference actual events, names, and details from the text
-    9. For areas_for_improvement: be honest about weaknesses in THIS text
-
-        IMPORTANT INSTRUCTIONS:
-    ... (existing instructions) ...
-    
-# Replace your existing scoring rules with this:
-
-    ABSOLUTE MANDATORY SCORING RULES - YOU MUST FOLLOW THESE EXACTLY:
-    
-    You have detected and labeled this text as "AI-GENERATED CONTENT".
-    Therefore, the marketability score MUST reflect this reality.
-    
-    MANDATORY SCORING BASED ON YOUR OWN DETECTION:
-    
-    IF you concluded "Clearly AI-generated" → overall_score MUST be between 30-50
-    IF you concluded "Possibly AI-assisted" → overall_score MUST be between 50-65
-    IF you concluded "Likely human-written" → overall_score can be 70-100
-    
-    You have concluded: "AI-GENERATED CONTENT"
-    Therefore: overall_score MUST be between 30-50
-    
-    THIS IS NOT OPTIONAL. This is a logical requirement:
-    - AI-generated content has LOW marketability
-    - Your own analysis says it's AI-generated
-    - Therefore the score MUST be LOW
-    
-    If you give a score above 50 to AI-generated content, you are contradicting your own analysis.
-    
-    The correct score for this text is 45. Not 70. Not 75. Not 80. 45.
-    
-    Now score accordingly.
-    
-    Return JSON with these sections:
-    
-    {{
-        "marketability": {{
-            "overall_score": (0-100 number based on these excerpts),
-            "overall_grade": ("A", "B", "C", "D", "F" with +/-),
-            "overall_assessment": "One sentence summary of this specific book",
-            "scores": {{
-                "writing_quality": {{"score": 0-100, "explanation": "Based on the prose in these excerpts - be specific"}},
-                "commercial_potential": {{"score": 0-100, "explanation": "Based on the hook and content shown"}},
-                "genre_fit": {{"score": 0-100, "explanation": "How well this matches genre conventions"}},
-                "hook_strength": {{"score": 0-100, "explanation": "Based on the opening excerpt"}},
-                "character_appeal": {{"score": 0-100, "explanation": "Based on characters shown in excerpts"}},
-                "pacing": {{"score": 0-100, "explanation": "Based on flow between beginning, middle, and end"}},
-                "originality": {{"score": 0-100, "explanation": "Unique elements observed in these excerpts"}}
-            }}
-        }},
-        
-        "writing_quality_detailed": {{
-            "prose_quality": "Assessment of sentence-level writing from these excerpts - quote examples",
-            "dialogue": "Quality and naturalness of dialogue from these excerpts - quote examples",
-            "description": "Quality of descriptive passages from these excerpts - quote examples",
-            "voice": "Strength and consistency of narrative voice in these excerpts",
-            "technical_execution": "Grammar, punctuation, formatting in these excerpts"
-        }},
-        
-        "book_info": {{
-            "title": "{detected_title}",
-            "author": "{detected_author}",
-            "genres": ["primary genre from approved list", "secondary genre if applicable", "another if applicable"],
-            "tone": "overall emotional tone from these excerpts",
-            "writing_style": "descriptive/lyrical/direct/etc from these excerpts",
-            "pacing_summary": "fast/medium/slow based on these excerpts"
-        }},
-        
-        "characters": {{
-            "main": [
-                {{
-                    "name": "character name",
-                    "role": "protagonist/antagonist/etc",
-                    "description": "who they are based on excerpts",
-                    "arc": "how they change (if shown)",
-                    "motivation": "what drives them (if shown)",
-                    "conflict": "internal or external struggles (if shown)",
-                    "appeal_factor": "Why readers will connect with this character"
-                }}
-            ],
-            "supporting": ["list of supporting characters mentioned"],
-            "relationships": ["key dynamics between characters shown or implied"]
-        }},
-        
-        "character_development": {{
-            "protagonist_journey": "how the main character changes based on excerpts",
-            "antagonist_motivation": "what drives the opposition (if present)",
-            "supporting_arcs": ["how other characters evolve (if shown)"]
-        }},
-        
-        "narrative_arc": {{
-            "exposition": "setup shown in beginning excerpt",
-            "rising_action": "events in middle excerpt",
-            "climax": "turning point in excerpts (if any)",
-            "falling_action": "aftermath in ending excerpt (if any)",
-            "resolution": "conclusion shown in ending excerpt"
-        }},
-        
-        "plot": {{
-            "opening_hook": "what grabs attention in the first 500 chars",
-            "inciting_incident": "what starts the story (if shown)",
-            "major_plot_points": ["point1 from excerpts", "point2 from excerpts"],
-            "plot_twists": ["any surprises in excerpts"]
-        }},
-        
-        "themes": {{
-            "primary": ["main themes visible in excerpts"],
-            "secondary": ["other themes hinted at"]
-        }},
-        
-        "strengths": ["5 specific strengths of THIS manuscript with examples from the text"],
-        
-        "areas_for_improvement": ["5 specific weaknesses in THIS manuscript with concrete suggestions based on the text"],
-        
-        "target_audience": {{
-            "primary": "who would enjoy THIS specific book",
-            "appeal": "why they'd enjoy it based on these excerpts"
-        }},
-        
-        "marketing": {{
-            "unique_selling_points": ["what makes THIS specific book special based on excerpts"],
-            "blurb_suggestion": "A potential back-cover blurb based on THIS content"
-        }}
-    }}
-    """
-    
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "You are a literary analyst. Return valid JSON only. Base your analysis strictly on the provided excerpts."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.4,
-            max_tokens=4000,
-            response_format={"type": "json_object"}
-        )
-        
-        result = json.loads(response.choices[0].message.content)
-        
-        # Ensure title and author are set
-        if 'book_info' not in result:
-            result['book_info'] = {}
-        result['book_info']['title'] = detected_title
-        result['book_info']['author'] = detected_author
-        
-        return result
-        
-    except Exception as e:
-        st.error(f"Analysis failed: {str(e)}")
-        return None
-
-# For running standalone
 if __name__ == "__main__":
     show_marketability_checker()
