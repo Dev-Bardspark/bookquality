@@ -1,4 +1,4 @@
-# BookMarketabilityChecker.py - COMPLETE FIXED VERSION WITH IMPORT
+# BookMarketabilityChecker.py - COMPLETE FIXED VERSION WITH PNG-ONLY COVER DETECTOR
 import streamlit as st
 import openai
 import PyPDF2
@@ -14,13 +14,11 @@ from datetime import datetime
 import re
 import zipfile
 from xml.etree import ElementTree
-import fitz  # PyMuPDF for PDF cover extraction
 import tempfile
 import os
 
-# Import the working AI cover detector
-# Make sure ai_cover_detector_gpt4o_mini_png.py is in the same directory
-import ai_cover_detector_gpt4o_mini_png as ai_cover
+# Import the PNG-only cover detector (YOUR PERFECT SCRIPT)
+import ai_cover_detector_gpt4o_mini_png_only as ai_cover
 
 # Initialize OpenAI with secrets
 client = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
@@ -33,31 +31,30 @@ SENDER_PASSWORD = st.secrets["SENDER_PASSWORD"]
 USE_TLS = st.secrets.get("use_tls", True)
 
 def analyze_cover(cover_file):
-    """Full cover analysis - using the imported working AI cover detector"""
-    
+    """
+    Full cover analysis using the PERFECT PNG-only detector
+    NO CONVERSION - only accepts PNG files directly
+    """
     try:
-        # Save uploaded file temporarily to use with the imported function
-        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(cover_file.name)[1]) as tmp_file:
-            tmp_file.write(cover_file.getvalue())
-            tmp_path = tmp_file.name
+        # Check if it's actually a PNG
+        if cover_file.type != "image/png" and not cover_file.name.lower().endswith('.png'):
+            st.error("❌ ONLY PNG FILES ARE ACCEPTED FOR COVER ANALYSIS")
+            st.info("Please convert your image to PNG first (Paint, GIMP, or online converters)")
+            return None
         
-        # Use the imported module's functions
-        # First convert to PNG using their method
-        st.info("🔄 Converting to PNG for optimal AI detection...")
-        png_bytes, mime_type = ai_cover.standardize_to_png(tmp_path)
+        # Get the PNG bytes directly - NO CONVERSION
+        png_bytes = cover_file.getvalue()
         
-        # Then detect AI using their proven method
-        st.info("🔍 Analyzing cover for AI generation...")
+        # Show what we're doing
+        st.success("✅ PNG file accepted - analyzing...")
+        
+        # Detect AI using your PERFECT function
         ai_detection_json = ai_cover.detect_ai_cover(png_bytes)
         ai_detection_result = json.loads(ai_detection_json)
         
-        # Clean up temp file
-        os.unlink(tmp_path)
-        
-        # Also get the original style analysis with vision
+        # Also get style analysis (this is separate from AI detection)
         cover_base64 = base64.b64encode(png_bytes).decode('utf-8')
         
-        # Style analysis prompt
         style_prompt = """Analyze this book cover's design elements. Return JSON with:
         {
             "colors": ["list of dominant colors"],
@@ -782,6 +779,16 @@ def show_marketability_checker():
             height: 50px;
             font-size: 16px;
         }
+        .stFileUploader {
+            padding: 10px;
+        }
+        .png-warning {
+            background: #fff3cd;
+            border-left: 5px solid #ff8800;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
     </style>
     """, unsafe_allow_html=True)
     
@@ -805,7 +812,7 @@ def show_marketability_checker():
         - 🎯 **Theme identification** and motif analysis
         - 💪 **Key strengths** of your manuscript
         - 🔧 **Areas for improvement** with specific suggestions
-        - 🎨 **Cover analysis with AI detection** (if you upload it)
+        - 🎨 **Cover analysis with AI detection** (if you upload a PNG)
         - 🎯 **Target audience** identification
         - 📢 **Marketing insights** and blurb suggestion
         """)
@@ -848,15 +855,25 @@ def show_upload_section():
             st.session_state.text = extract_text_for_analysis(manuscript)
     
     with col2:
-        st.markdown("**🎨 Cover Image (optional but recommended)**")
+        st.markdown("**🎨 Cover Image (PNG only for best results)**")
+        
+        # PNG-only warning
+        st.markdown("""
+        <div class="png-warning">
+            ⚠️ <strong>PNG files only</strong> - Other formats will be rejected<br>
+            <small>PNG is lossless and gives most accurate AI detection</small>
+        </div>
+        """, unsafe_allow_html=True)
+        
         cover = st.file_uploader(
-            "Upload JPG, PNG, GIF, WEBP, BMP, TIFF, or PDF",
-            type=['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'tiff', 'tif', 'pdf'],
+            "Upload PNG only",
+            type=['png'],  # ONLY PNG!
             key="cover",
-            label_visibility="collapsed"
+            label_visibility="collapsed",
+            help="Only PNG files are accepted for accurate AI detection"
         )
         if cover:
-            st.success(f"✅ {cover.name}")
+            st.success(f"✅ PNG file accepted: {cover.name}")
             # Store cover for later analysis
             st.session_state.cover_file = cover
     
