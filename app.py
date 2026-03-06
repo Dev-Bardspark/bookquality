@@ -26,42 +26,126 @@ SENDER_EMAIL = st.secrets["SENDER_EMAIL"]
 SENDER_PASSWORD = st.secrets["SENDER_PASSWORD"]
 USE_TLS = st.secrets.get("use_tls", True)
 
+def analyze_cover(cover_file):
+    """Full cover analysis - WITH AI DETECTION built in"""
+    
+    try:
+        # Handle PDF files with PyMuPDF
+        if cover_file.type == "application/pdf":
+            st.info("🔄 Analyzing PDF cover...")
+            
+            # Open PDF with PyMuPDF
+            pdf_document = fitz.open(stream=cover_file.getvalue(), filetype="pdf")
+            
+            # Get first page
+            first_page = pdf_document[0]
+            
+            # Render page to image (higher dpi = better quality)
+            zoom = 2.0  # 2x zoom for better quality
+            mat = fitz.Matrix(zoom, zoom)
+            pix = first_page.get_pixmap(matrix=mat, alpha=False)
+            
+            # Convert to bytes
+            img_bytes = pix.tobytes("png")
+            cover_base64 = base64.b64encode(img_bytes).decode('utf-8')
+            
+            pdf_document.close()
+            
+        else:
+            # Handle regular image formats
+            cover_bytes = cover_file.getvalue()
+            cover_base64 = base64.b64encode(cover_bytes).decode('utf-8')
+        
+        # Analyze with OpenAI vision - with specific AI detection instructions
+        prompt = """Analyze this book cover in detail and determine if it's AI-generated.
+        
+        Look for these SPECIFIC AI GENERATION INDICATORS:
+        1. TEXT: Any text should be examined - AI often generates gibberish, misspelled words, or nonsensical letters
+        2. HANDS/FINGERS: Count fingers on any hands shown - AI frequently gets numbers wrong or creates malformed digits
+        3. ANATOMY: Check for impossible body parts, extra limbs, or strange proportions
+        4. LIGHTING: Look for inconsistent light sources or shadows that don't make physical sense
+        5. BLENDING: Check for areas where objects "melt" into each other or have unnatural transitions
+        6. SYMMETRY: AI often fails at symmetrical elements like faces, buildings, or patterns
+        7. PERSPECTIVE: Check if architectural elements follow proper perspective
+        8. DETAILS: Look for areas that are overly smooth or lack texture compared to the rest of the image
+        
+        Return JSON with:
+        {
+            "colors": ["list of dominant colors"],
+            "has_figure": true/false,
+            "figure_description": "description if any figures present",
+            "typography": "description of font style",
+            "composition": "how elements are arranged",
+            "mood": "emotional feeling",
+            "genre_signals": "what genre this suggests",
+            "ai_detection": {
+                "is_ai_generated": true/false,
+                "confidence": 0-100,
+                "indicators_found": ["list specific AI red flags found"],
+                "explanation": "brief explanation of why it is or isn't AI"
+            },
+            "strengths": ["3 specific strengths"],
+            "weaknesses": ["3 specific weaknesses", "INCLUDE AI ARTIFACTS HERE if found"],
+            "suggestions": ["3 improvements"]
+        }"""
+        
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{cover_base64}"
+                            }
+                        }
+                    ]
+                }
+            ],
+            max_tokens=1000,
+            temperature=0.3,
+            response_format={"type": "json_object"}
+        )
+        
+        result = json.loads(response.choices[0].message.content)
+        return result
+        
+    except Exception as e:
+        st.error(f"Cover analysis failed: {e}")
+        return None
+
 def detect_ai_content(text, cover_analysis=None):
     """
     Analyze text and cover for signs of AI generation
     Returns: dict with detection results
     """
-    # Convert cover_analysis to a string for the prompt
-    cover_text = "No cover provided"
-    cover_ai_info = ""
+    # Extract cover AI info if available
+    cover_indicators = []
+    cover_human = []
+    cover_ai_summary = ""
     
-    if cover_analysis:
-        cover_text = json.dumps(cover_analysis, indent=2)
-        # Extract AI detection from cover analysis if available
-        if 'ai_detection' in cover_analysis:
-            ai_detect = cover_analysis['ai_detection']
-            cover_ai_info = f"""
-            COVER AI DETECTION RESULTS:
-            AI Generated: {ai_detect.get('is_ai_generated', 'unknown')}
-            Confidence: {ai_detect.get('confidence', 0)}%
-            Indicators: {ai_detect.get('indicators_found', [])}
-            Explanation: {ai_detect.get('explanation', '')}
-            """
+    if cover_analysis and 'ai_detection' in cover_analysis:
+        ai_detect = cover_analysis['ai_detection']
+        cover_indicators = ai_detect.get('indicators_found', [])
+        if ai_detect.get('is_ai_generated', False):
+            cover_ai_summary = f"Cover appears AI-generated: {ai_detect.get('explanation', '')}"
+        else:
+            cover_human = ["Thoughtful composition", "Consistent lighting", "Professional design"]
+            cover_ai_summary = f"Cover appears human-designed: {ai_detect.get('explanation', '')}"
     
     prompt = f"""
-    Analyze this book manuscript excerpt and cover analysis for signs of AI generation.
+    Analyze this book manuscript excerpt for signs of AI generation.
     
     MANUSCRIPT EXCERPT:
     {text[:10000]}  # First 10,000 chars for analysis
     
-    COVER ANALYSIS:
-    {cover_text}
+    COVER ANALYSIS SUMMARY:
+    {cover_ai_summary}
     
-    {cover_ai_info}
-    
-    Look for these AI indicators:
-    
-    TEXT INDICATORS:
+    Look for these AI indicators in the TEXT:
     - Overuse of common AI transition phrases ("Furthermore", "Moreover", "In conclusion", "It is important to note")
     - Repetitive sentence structures
     - Generic descriptions lacking specific sensory details
@@ -70,10 +154,6 @@ def detect_ai_content(text, cover_analysis=None):
     - Hallucinated facts or inconsistencies
     - Too "perfect" grammar with no stylistic quirks
     
-    COVER INDICATORS (from the cover analysis above):
-    - Use the cover AI detection results if available
-    - Pay special attention to text gibberish, hand/finger anomalies, lighting inconsistencies
-    
     Return JSON with:
     {{
         "text_analysis": {{
@@ -81,8 +161,8 @@ def detect_ai_content(text, cover_analysis=None):
             "human_indicators_found": ["list of human-written signs - e.g., 'unique voice', 'emotional depth', 'specific sensory details']
         }},
         "cover_analysis": {{
-            "indicators_found": ["list of AI signs in cover - USE THE COVER AI DETECTION RESULTS"],
-            "human_indicators_found": ["list of human-designed signs in cover - e.g., 'thoughtful composition', 'consistent lighting']
+            "indicators_found": {json.dumps(cover_indicators)},
+            "human_indicators_found": {json.dumps(cover_human)}
         }},
         "overall_assessment": {{
             "conclusion": ONE OF THESE EXACT PHRASES: "Likely human-written", "Possibly AI-assisted", "Clearly AI-generated", or "Inconclusive",
@@ -95,7 +175,7 @@ def detect_ai_content(text, cover_analysis=None):
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You are an AI detection expert. Analyze the text and cover and return your conclusion using ONLY one of these exact phrases: 'Likely human-written', 'Possibly AI-assisted', 'Clearly AI-generated', or 'Inconclusive'."},
+                {"role": "system", "content": "You are an AI detection expert. Analyze the text and return your conclusion using ONLY one of these exact phrases: 'Likely human-written', 'Possibly AI-assisted', 'Clearly AI-generated', or 'Inconclusive'."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.3,
@@ -107,6 +187,8 @@ def detect_ai_content(text, cover_analysis=None):
     except Exception as e:
         st.error(f"AI detection failed: {e}")
         return {
+            "text_analysis": {"indicators_found": [], "human_indicators_found": []},
+            "cover_analysis": {"indicators_found": cover_indicators, "human_indicators_found": cover_human},
             "overall_assessment": {
                 "conclusion": "Inconclusive",
                 "explanation": "AI detection could not be completed"
@@ -136,14 +218,9 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
     text_indicators = ai_detection_results.get('text_analysis', {}).get('indicators_found', [])
     text_human_indicators = ai_detection_results.get('text_analysis', {}).get('human_indicators_found', [])
     
-    # Get cover indicators
+    # Get cover indicators - THESE WILL NOW ACTUALLY SHOW
     cover_indicators = ai_detection_results.get('cover_analysis', {}).get('indicators_found', [])
     cover_human_indicators = ai_detection_results.get('cover_analysis', {}).get('human_indicators_found', [])
-    
-    if not text_indicators and not cover_indicators:
-        indicators_list = ["No AI indicators detected"]
-    else:
-        indicators_list = text_indicators + cover_indicators
     
     # Determine styling based on conclusion
     conclusion_lower = ai_conclusion.lower()
@@ -249,12 +326,12 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
             </div>
             ''' if text_indicators or text_human_indicators else ''}
             
-            <!-- Show cover indicators -->
+            <!-- Show cover indicators - THIS WILL NOW APPEAR -->
             {f'''
             <div class="indicator-list">
                 <p style="margin: 0 0 10px 0; font-weight: bold;">🎨 Cover Analysis:</p>
                 <ul style="margin: 0; color: #555;">
-                    {''.join([f'<li style="margin: 5px 0;">{indicator}</li>' for indicator in cover_indicators[:3]])}
+                    {''.join([f'<li style="margin: 5px 0;">{indicator}</li>' for indicator in cover_indicators[:5]])}
                 </ul>
                 {f'''
                 <p style="margin: 10px 0 5px 0; font-weight: bold;">✨ Cover Strengths:</p>
@@ -395,15 +472,22 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
         </div>
         """
     
-    # Cover analysis if available
+    # Cover analysis if available - this is the GENERAL cover analysis, not AI detection
     if cover_analysis:
+        ai_warnings = []
+        if 'ai_detection' in cover_analysis and cover_analysis['ai_detection'].get('is_ai_generated'):
+            ai_warnings = cover_analysis['ai_detection'].get('indicators_found', [])
+        
         body += f"""
         <div style="padding: 20px; background: #f8f9fa; border-radius: 10px; margin-top: 20px;">
-            <h2>🎨 Cover Analysis</h2>
+            <h2>🎨 Cover Design Analysis</h2>
             <p><strong>Mood:</strong> {cover_analysis.get('mood', 'N/A')}</p>
             <p><strong>Genre Signals:</strong> {cover_analysis.get('genre_signals', 'N/A')}</p>
             <p><strong>Strengths:</strong> {', '.join(cover_analysis.get('strengths', ['N/A']))}</p>
             <p><strong>Weaknesses:</strong> {', '.join(cover_analysis.get('weaknesses', ['N/A']))}</p>
+            {f'''
+            <p style="color: #d32f2f; margin-top: 10px;"><strong>⚠️ AI Detection:</strong> {', '.join(ai_warnings[:3])}</p>
+            ''' if ai_warnings else ''}
         </div>
         """
     
@@ -905,97 +989,6 @@ def show_results_section():
         """, unsafe_allow_html=True)
     
     st.success(f"✅ We've sent your complete analysis to your email!")
-
-def analyze_cover(cover_file):
-    """Full cover analysis - WITH AI DETECTION built in"""
-    
-    try:
-        # Handle PDF files with PyMuPDF
-        if cover_file.type == "application/pdf":
-            st.info("🔄 Analyzing PDF cover...")
-            
-            # Open PDF with PyMuPDF
-            pdf_document = fitz.open(stream=cover_file.getvalue(), filetype="pdf")
-            
-            # Get first page
-            first_page = pdf_document[0]
-            
-            # Render page to image (higher dpi = better quality)
-            zoom = 2.0  # 2x zoom for better quality
-            mat = fitz.Matrix(zoom, zoom)
-            pix = first_page.get_pixmap(matrix=mat, alpha=False)
-            
-            # Convert to bytes
-            img_bytes = pix.tobytes("png")
-            cover_base64 = base64.b64encode(img_bytes).decode('utf-8')
-            
-            pdf_document.close()
-            
-        else:
-            # Handle regular image formats
-            cover_bytes = cover_file.getvalue()
-            cover_base64 = base64.b64encode(cover_bytes).decode('utf-8')
-        
-        # Analyze with OpenAI vision - with specific AI detection instructions
-        prompt = """Analyze this book cover in detail and determine if it's AI-generated.
-        
-        Look for these SPECIFIC AI GENERATION INDICATORS:
-        1. TEXT: Any text should be examined - AI often generates gibberish, misspelled words, or nonsensical letters
-        2. HANDS/FINGERS: Count fingers on any hands shown - AI frequently gets numbers wrong or creates malformed digits
-        3. ANATOMY: Check for impossible body parts, extra limbs, or strange proportions
-        4. LIGHTING: Look for inconsistent light sources or shadows that don't make physical sense
-        5. BLENDING: Check for areas where objects "melt" into each other or have unnatural transitions
-        6. SYMMETRY: AI often fails at symmetrical elements like faces, buildings, or patterns
-        7. PERSPECTIVE: Check if architectural elements follow proper perspective (parallel lines should converge)
-        8. DETAILS: Look for areas that are overly smooth or lack texture compared to the rest of the image
-        
-        Return JSON with:
-        {
-            "colors": ["list of dominant colors"],
-            "has_figure": true/false,
-            "figure_description": "description if any figures present",
-            "typography": "description of font style",
-            "composition": "how elements are arranged",
-            "mood": "emotional feeling",
-            "genre_signals": "what genre this suggests",
-            "ai_detection": {
-                "is_ai_generated": true/false,
-                "confidence": 0-100,
-                "indicators_found": ["list specific AI red flags found"],
-                "explanation": "brief explanation of why it is or isn't AI"
-            },
-            "strengths": ["3 specific strengths"],
-            "weaknesses": ["3 specific weaknesses"],
-            "suggestions": ["3 improvements"]
-        }"""
-        
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{cover_base64}"
-                            }
-                        }
-                    ]
-                }
-            ],
-            max_tokens=1000,
-            temperature=0.3,
-            response_format={"type": "json_object"}
-        )
-        
-        result = json.loads(response.choices[0].message.content)
-        return result
-        
-    except Exception as e:
-        st.error(f"Cover analysis failed: {e}")
-        return None
 
 def extract_text_for_analysis(file):
     """Extract text for analysis only - simplified version"""
