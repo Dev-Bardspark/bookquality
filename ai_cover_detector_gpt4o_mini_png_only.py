@@ -1,66 +1,37 @@
-# ai_cover_detector_gpt4o_mini_png.py - STREAMLIT VERSION (IDENTICAL LOGIC)
-import streamlit as st
+# ai_cover_detector_gpt4o_mini_png_only.py
+# Requirements:
+#   pip install openai pillow python-magic
+#   (no pdf2image or poppler needed anymore)
+
 import base64
 import os
 from pathlib import Path
+import streamlit as st
 from PIL import Image
 import io
 from openai import OpenAI
-import tempfile
 
-# Initialize OpenAI with Streamlit secrets (ONLY CHANGE)
-client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+# ────────────────────────────────────────
+# CONFIG – Using Streamlit secrets
+# ────────────────────────────────────────
+client = OpenAI(
+    api_key=st.secrets["OPENAI_API_KEY"]
+)
 MODEL = "gpt-4o-mini"
+# ────────────────────────────────────────
 
-def standardize_to_png(uploaded_file) -> tuple[bytes, str]:
-    """Convert image or PDF first page to lossless PNG bytes"""
+def load_png_bytes(uploaded_file) -> bytes:
+    """Load PNG file as bytes from Streamlit upload"""
+    if uploaded_file.type != "image/png":
+        raise ValueError("Only PNG files are accepted")
     
-    # Save uploaded file temporarily
-    with tempfile.NamedTemporaryFile(delete=False, suffix=Path(uploaded_file.name).suffix) as tmp_file:
-        tmp_file.write(uploaded_file.getvalue())
-        tmp_path = tmp_file.name
-    
-    try:
-        path = Path(tmp_path)
-        
-        # Handle PDF files
-        if uploaded_file.type == "application/pdf":
-            try:
-                from pdf2image import convert_from_path
-                images = convert_from_path(str(path), first_page=1, last_page=1, dpi=250)
-                if not images:
-                    raise ValueError("No pages rendered from PDF")
-                img = images[0]
-            except ImportError:
-                st.error("\nError: PDF support requires 'pdf2image' and poppler installed.")
-                st.error("Install: pip install pdf2image")
-                st.error("Poppler (Windows): https://github.com/oschwartz10612/poppler-windows/releases/")
-                raise
-            except Exception as e:
-                raise RuntimeError(f"PDF conversion failed: {e}")
-        else:
-            try:
-                img = Image.open(path)
-                img = img.convert("RGB")  # remove alpha if present
-            except Exception as e:
-                raise RuntimeError(f"Cannot open image: {e}")
-
-        # Save as PNG (lossless)
-        buffer = io.BytesIO()
-        img.save(buffer, format="PNG", optimize=True)
-        buffer.seek(0)
-        return buffer.read(), "image/png"
-        
-    finally:
-        # Clean up temp file
-        os.unlink(tmp_path)
+    return uploaded_file.getvalue()
 
 
 def detect_ai_cover(png_bytes: bytes):
     b64 = base64.b64encode(png_bytes).decode("utf-8")
 
     prompt = """You are an expert at detecting AI-generated book covers.
-
 Examine this image carefully for signs it was created by AI (Midjourney, DALL·E, Flux, Stable Diffusion, etc.).
 
 Common strong AI indicators:
@@ -96,7 +67,6 @@ Return **only** valid JSON:
             max_tokens=500,
             response_format={"type": "json_object"}
         )
-
         return response.choices[0].message.content
 
     except Exception as e:
