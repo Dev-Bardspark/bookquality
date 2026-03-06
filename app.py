@@ -830,6 +830,9 @@ def show_upload_section():
                 # Run AI detection first
                 ai_detection = detect_ai_content(text, cover_analysis)
                 st.session_state.ai_detection = ai_detection
+                # 🔍 DEBUG: Print what the AI detection returned
+                st.write("🔍 DEBUG - AI Detection Results:")
+                st.json(ai_detection)
                 
                 # Analyze manuscript (FULL analysis)
                 analysis = analyze_book_complete(text, cover_analysis, book_title, author_name)
