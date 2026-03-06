@@ -26,8 +26,84 @@ SENDER_EMAIL = st.secrets["SENDER_EMAIL"]
 SENDER_PASSWORD = st.secrets["SENDER_PASSWORD"]
 USE_TLS = st.secrets.get("use_tls", True)
 
-def send_email(recipient_email, analysis_results, cover_analysis, book_title, author_name):
-    """Send full analysis results via email"""
+def detect_ai_content(text, cover_analysis=None):
+    """
+    Analyze text and cover for signs of AI generation
+    Returns: dict with detection results and confidence score
+    """
+    prompt = f"""
+    Analyze this book manuscript excerpt and cover analysis for signs of AI generation.
+    
+    MANUSCRIPT EXCERPT:
+    {text[:10000]}  # First 10,000 chars for analysis
+    
+    COVER ANALYSIS (if available):
+    {json.dumps(cover_analysis) if cover_analysis else "No cover provided"}
+    
+    Look for these AI indicators:
+    
+    TEXT INDICATORS:
+    - Overuse of common AI transition phrases ("Furthermore", "Moreover", "In conclusion", "It is important to note")
+    - Repetitive sentence structures
+    - Generic descriptions lacking specific sensory details
+    - Predictable dialogue patterns
+    - Lack of authentic voice or personality
+    - Hallucinated facts or inconsistencies
+    - Too "perfect" grammar with no stylistic quirks
+    
+    COVER INDICATORS (if available):
+    - Garbled or nonsensical text
+    - Anatomical issues (hands, fingers, eyes)
+    - Strange blending of elements
+    - Inconsistent lighting or physics
+    - "Melty" or glitchy textures
+    
+    Return JSON with:
+    {{
+        "text_analysis": {{
+            "ai_likelihood_score": 0-100,
+            "indicators_found": ["list of specific AI signs in the text"],
+            "human_indicators_found": ["list of human-written signs"],
+            "confidence": 0-100
+        }},
+        "cover_analysis": {{
+            "ai_likelihood_score": 0-100,
+            "indicators_found": ["list of AI signs in cover"],
+            "confidence": 0-100
+        }},
+        "overall_assessment": {{
+            "conclusion": "Clearly AI-generated" or "Possibly AI-assisted" or "Likely human-written" or "Inconclusive",
+            "score": 0-100,
+            "explanation": "Brief explanation of the determination"
+        }}
+    }}
+    """
+    
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are an AI detection expert. Analyze text for signs of AI generation."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3,
+            max_tokens=1000,
+            response_format={"type": "json_object"}
+        )
+        
+        return json.loads(response.choices[0].message.content)
+    except Exception as e:
+        st.error(f"AI detection failed: {e}")
+        return {
+            "overall_assessment": {
+                "conclusion": "Analysis unavailable",
+                "score": 50,
+                "explanation": "AI detection could not be completed"
+            }
+        }
+
+def send_email(recipient_email, analysis_results, cover_analysis, book_title, author_name, ai_detection_results):
+    """Send full analysis results via email with AI detection"""
     
     subject = f"Your Complete Book Analysis: {book_title} by {author_name}"
     
@@ -40,8 +116,60 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
     grade = marketability.get('overall_grade', 'N/A')
     book_info = analysis_results.get('book_info', {})
     
+    # Get AI detection results
+    ai_overall = ai_detection_results.get('overall_assessment', {})
+    ai_conclusion = ai_overall.get('conclusion', 'Analysis incomplete')
+    ai_score = ai_overall.get('score', 0)
+    ai_explanation = ai_overall.get('explanation', '')
+    
+    # Determine warning class based on AI score
+    if ai_score >= 70:
+        ai_warning_class = "ai-warning-high"
+        ai_icon = "🤖⚠️"
+        ai_message = "This appears to be AI-generated"
+        ai_marketing_note = "This can make marketing harder because readers can sense when writing lacks authentic human voice and emotional depth. AI-generated content often feels generic and fails to create the genuine connection readers crave."
+    elif ai_score >= 40:
+        ai_warning_class = "ai-warning-medium"
+        ai_icon = "🤖❓"
+        ai_message = "May be AI-assisted"
+        ai_marketing_note = "If AI-assisted, ensure you've infused enough of your unique voice and personal experience. Readers connect with authentic human stories and perspectives."
+    else:
+        ai_warning_class = "ai-warning-low"
+        ai_icon = "✍️✅"
+        ai_message = "Likely human-written"
+        ai_marketing_note = "This human-written quality is valuable for marketing - it helps create authentic reader connections and emotional engagement."
+    
     body = f"""
     <html>
+    <head>
+        <style>
+            .ai-warning-high {{
+                background: #ffebee;
+                border-left: 5px solid #f44336;
+                padding: 15px;
+                margin: 20px 0;
+                border-radius: 5px;
+            }}
+            .ai-warning-medium {{
+                background: #fff3e0;
+                border-left: 5px solid #ff9800;
+                padding: 15px;
+                margin: 20px 0;
+                border-radius: 5px;
+            }}
+            .ai-warning-low {{
+                background: #e8f5e8;
+                border-left: 5px solid #4caf50;
+                padding: 15px;
+                margin: 20px 0;
+                border-radius: 5px;
+            }}
+            .ai-icon {{
+                font-size: 24px;
+                margin-right: 10px;
+            }}
+        </style>
+    </head>
     <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
         <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; border-radius: 10px; color: white; text-align: center;">
             <h1>Your Complete Book Analysis</h1>
@@ -49,6 +177,33 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
             <h3 style="font-size: 20px; margin: 0 0 20px 0; opacity: 0.9;">by {author_name}</h3>
             <div style="font-size: 48px; font-weight: bold; margin: 20px 0;">{score} ({grade})</div>
             <p>Marketability Score</p>
+        </div>
+        
+        <!-- AI DETECTION SECTION - NEW -->
+        <div class="{ai_warning_class}">
+            <div style="display: flex; align-items: center;">
+                <span class="ai-icon">{ai_icon}</span>
+                <h3 style="margin: 0;">AI Detection Analysis: {ai_message}</h3>
+            </div>
+            <p><strong>Confidence:</strong> {ai_score}%</p>
+            <p><strong>Explanation:</strong> {ai_explanation}</p>
+            
+            <!-- Text indicators if available -->
+            {f'''
+            <div style="margin-top: 10px; padding: 10px; background: rgba(0,0,0,0.05); border-radius: 5px;">
+                <p><strong>📝 Text Analysis:</strong></p>
+                <ul>
+                    {''.join([f'<li>{indicator}</li>' for indicator in ai_detection_results.get('text_analysis', {}).get('indicators_found', [])[:3]])}
+                </ul>
+            </div>
+            ''' if ai_detection_results.get('text_analysis', {}).get('indicators_found') else ''}
+            
+            <!-- Marketing impact note -->
+            <div style="margin-top: 15px; padding: 10px; background: white; border-radius: 5px; border-left: 3px solid #f44336;">
+                <p style="margin: 0; color: #333;">
+                    <strong>📢 Marketing Impact:</strong> {ai_marketing_note}
+                </p>
+            </div>
         </div>
     """
     
@@ -399,6 +554,7 @@ def show_marketability_checker():
     # What they get
     with st.expander("📋 What's included in your free analysis", expanded=True):
         st.markdown("""
+        - 🤖 **AI detection analysis** - Find out if your book shows signs of AI generation
         - 📖 **Full book analysis** (genre, tone, writing style, pacing)
         - 📊 **Marketability score** with detailed breakdown
         - ✍️ **Writing quality assessment** (prose, dialogue, voice)
@@ -423,6 +579,8 @@ def show_marketability_checker():
         st.session_state.cover_analysis = None
     if 'text' not in st.session_state:
         st.session_state.text = None
+    if 'ai_detection' not in st.session_state:
+        st.session_state.ai_detection = None
     
     if not st.session_state.analysis_complete:
         show_upload_section()
@@ -489,6 +647,7 @@ def show_upload_section():
         st.session_state.analysis_complete = False
         st.session_state.analysis_result = None
         st.session_state.cover_analysis = None
+        st.session_state.ai_detection = None
         
         if st.button("🔍 GET MY FREE ANALYSIS", type="primary", use_container_width=True):
             with st.spinner("Analyzing your book... (about 60 seconds)"):
@@ -502,6 +661,10 @@ def show_upload_section():
                     cover_analysis = analyze_cover(cover)
                     st.session_state.cover_analysis = cover_analysis
                 
+                # Run AI detection first
+                ai_detection = detect_ai_content(text, cover_analysis)
+                st.session_state.ai_detection = ai_detection
+                
                 # Analyze manuscript (FULL analysis)
                 analysis = analyze_book_complete(text, cover_analysis, book_title, author_name)
                 
@@ -513,8 +676,8 @@ def show_upload_section():
                     final_title = book_info.get('title', 'Your Book')
                     final_author = book_info.get('author', 'Unknown Author')
                     
-                    # Send email
-                    email_sent = send_email(email, analysis, cover_analysis, final_title, final_author)
+                    # Send email with AI detection results
+                    email_sent = send_email(email, analysis, cover_analysis, final_title, final_author, ai_detection)
                     
                     if email_sent:
                         st.session_state.analysis_complete = True
@@ -535,12 +698,35 @@ def show_results_section():
     """Show results with preview and low score warning if needed"""
     
     analysis = st.session_state.analysis_result
+    ai_detection = st.session_state.ai_detection
     marketability = analysis.get('marketability', {})
     overall_score = marketability.get('overall_score', 0)
     overall_grade = marketability.get('overall_grade', 'N/A')
     book_info = analysis.get('book_info', {})
     book_title = book_info.get('title', 'Your Book')
     author_name = book_info.get('author', 'Unknown Author')
+    
+    # Get AI detection results for display
+    ai_overall = ai_detection.get('overall_assessment', {})
+    ai_conclusion = ai_overall.get('conclusion', 'Analysis incomplete')
+    ai_score = ai_overall.get('score', 0)
+    
+    # Determine AI warning style
+    if ai_score >= 70:
+        ai_bg_color = "#ffebee"
+        ai_border = "#f44336"
+        ai_icon = "🤖⚠️"
+        ai_text = f"AI DETECTED ({ai_score}% confidence)"
+    elif ai_score >= 40:
+        ai_bg_color = "#fff3e0"
+        ai_border = "#ff9800"
+        ai_icon = "🤖❓"
+        ai_text = f"POSSIBLE AI ASSISTANCE ({ai_score}% confidence)"
+    else:
+        ai_bg_color = "#e8f5e8"
+        ai_border = "#4caf50"
+        ai_icon = "✍️✅"
+        ai_text = f"LIKELY HUMAN-WRITTEN ({ai_score}% confidence)"
     
     # Color based on score
     if overall_score >= 80:
@@ -561,6 +747,19 @@ def show_results_section():
     <div style="text-align: center; margin-bottom: 20px;">
         <h2>{book_title}</h2>
         <h3 style="color: #666;">by {author_name}</h3>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Show AI detection banner
+    st.markdown(f"""
+    <div style="padding: 15px; background: {ai_bg_color}; border-left: 5px solid {ai_border}; border-radius: 5px; margin-bottom: 20px;">
+        <div style="display: flex; align-items: center;">
+            <span style="font-size: 24px; margin-right: 10px;">{ai_icon}</span>
+            <div>
+                <strong>{ai_text}</strong><br>
+                <span style="color: #666;">{ai_overall.get('explanation', '')}</span>
+            </div>
+        </div>
     </div>
     """, unsafe_allow_html=True)
     
