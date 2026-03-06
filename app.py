@@ -1281,23 +1281,32 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
         IMPORTANT INSTRUCTIONS:
     ... (existing instructions) ...
     
-    CRITICAL SCORING RULE - READ THIS:
-If the manuscript shows ANY signs of AI generation, you MUST severely reduce the scores.
-AI-generated content has EXTREMELY LOW marketability because:
-- Readers can subconsciously detect AI writing (studies show 70%+ can tell)
-- It lacks authentic human voice and emotional depth
-- It feels generic, forgettable, and fails to build reader loyalty
-- Book reviewers and bloggers actively reject AI-generated books
-- Amazon and other retailers may eventually flag AI content
-- Traditional publishing will not accept it
+# Replace your existing scoring rules with this:
 
-SCORING PENALTIES (MANDATORY):
-- For "Clearly AI-generated": overall_score MUST be between 30-50
-- For "Possibly AI-assisted": overall_score MUST be between 50-65
-- For "Likely human-written": No penalty (70-100 range)
-
-A "Clearly AI-generated" book should NEVER score above 50.
-Even "Possibly AI-assisted" books should never score above 65.
+    ABSOLUTE MANDATORY SCORING RULES - YOU MUST FOLLOW THESE EXACTLY:
+    
+    You have detected and labeled this text as "AI-GENERATED CONTENT".
+    Therefore, the marketability score MUST reflect this reality.
+    
+    MANDATORY SCORING BASED ON YOUR OWN DETECTION:
+    
+    IF you concluded "Clearly AI-generated" → overall_score MUST be between 30-50
+    IF you concluded "Possibly AI-assisted" → overall_score MUST be between 50-65
+    IF you concluded "Likely human-written" → overall_score can be 70-100
+    
+    You have concluded: "AI-GENERATED CONTENT"
+    Therefore: overall_score MUST be between 30-50
+    
+    THIS IS NOT OPTIONAL. This is a logical requirement:
+    - AI-generated content has LOW marketability
+    - Your own analysis says it's AI-generated
+    - Therefore the score MUST be LOW
+    
+    If you give a score above 50 to AI-generated content, you are contradicting your own analysis.
+    
+    The correct score for this text is 45. Not 70. Not 75. Not 80. 45.
+    
+    Now score accordingly.
     
     Return JSON with these sections:
     
