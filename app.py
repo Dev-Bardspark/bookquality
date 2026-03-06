@@ -130,28 +130,26 @@ def detect_ai_content(text, cover_analysis=None):
     if cover_analysis and 'ai_detection' in cover_analysis:
         ai_detect = cover_analysis['ai_detection']
         cover_indicators = ai_detect.get('indicators_found', [])
-        cover_human = ai_detect.get('human_indicators_found', [])  # ← GET FROM API, NOT HARDCODED
         
         if ai_detect.get('is_ai_generated', False):
             cover_ai_summary = f"Cover appears AI-generated: {ai_detect.get('explanation', '')}"
+            cover_human = []  # NO STRENGTHS FOR AI COVERS
         else:
             cover_ai_summary = f"Cover appears human-designed: {ai_detect.get('explanation', '')}"
-    else:
-        cover_indicators = []
-        cover_human = []
-        cover_ai_summary = ""
+            # Use strengths from the main cover analysis, NOT ai_detection
+            cover_human = cover_analysis.get('strengths', [])[:3]
     
     prompt = f"""
     Analyze this book manuscript excerpt for signs of AI generation.
     
     MANUSCRIPT EXCERPT:
-    {text[:10000]}  # First 10,000 chars for analysis
+    {text[:10000]}
     
     COVER ANALYSIS SUMMARY:
     {cover_ai_summary}
     
     Look for these AI indicators in the TEXT:
-    - Overuse of common AI transition phrases ("Furthermore", "Moreover", "In conclusion", "It is important to note")
+    - Overuse of common AI transition phrases ("Furthermore", "Moreover", "In conclusion")
     - Repetitive sentence structures
     - Generic descriptions lacking specific sensory details
     - Predictable dialogue patterns
@@ -163,15 +161,15 @@ def detect_ai_content(text, cover_analysis=None):
     {{
         "text_analysis": {{
             "indicators_found": ["list of specific AI signs in the text - if none, leave empty"],
-            "human_indicators_found": ["list of human-written signs - e.g., 'unique voice', 'emotional depth', 'specific sensory details']
+            "human_indicators_found": ["list of human-written signs - e.g., 'unique voice', 'emotional depth']
         }},
         "cover_analysis": {{
             "indicators_found": {json.dumps(cover_indicators)},
             "human_indicators_found": {json.dumps(cover_human)}
         }},
         "overall_assessment": {{
-            "conclusion": ONE OF THESE EXACT PHRASES: "Likely human-written", "Possibly AI-assisted", "Clearly AI-generated", or "Inconclusive",
-            "explanation": "Brief explanation of the determination including both text and cover analysis if available"
+            "conclusion": "Likely human-written" or "Possibly AI-assisted" or "Clearly AI-generated" or "Inconclusive",
+            "explanation": "Brief explanation including both text and cover"
         }}
     }}
     """
@@ -180,7 +178,7 @@ def detect_ai_content(text, cover_analysis=None):
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You are an AI detection expert. Analyze the text and return your conclusion using ONLY one of these exact phrases: 'Likely human-written', 'Possibly AI-assisted', 'Clearly AI-generated', or 'Inconclusive'."},
+                {"role": "system", "content": "You are an AI detection expert. Return valid JSON only."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.3,
