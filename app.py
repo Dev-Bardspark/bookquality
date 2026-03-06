@@ -1282,20 +1282,22 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
     ... (existing instructions) ...
     
     CRITICAL SCORING RULE - READ THIS:
-    If the manuscript shows ANY signs of AI generation, you MUST significantly reduce the scores.
-    AI-generated content has VERY LOW marketability because:
-    - Readers can subconsciously detect AI writing
-    - It lacks authentic human voice and emotional depth
-    - It feels generic and forgettable
-    - Book reviewers and bloggers often reject AI-generated books
-    
-    SCORING PENALTIES:
-    - For "Clearly AI-generated": Reduce overall_score by 30-40 points
-    - For "Possibly AI-assisted": Reduce overall_score by 15-20 points
-    - For "Likely human-written": No penalty
-    
-    The final score MUST reflect the market reality: AI-generated books sell poorly.
-    A "Clearly AI-generated" book should NEVER score above 60.
+If the manuscript shows ANY signs of AI generation, you MUST severely reduce the scores.
+AI-generated content has EXTREMELY LOW marketability because:
+- Readers can subconsciously detect AI writing (studies show 70%+ can tell)
+- It lacks authentic human voice and emotional depth
+- It feels generic, forgettable, and fails to build reader loyalty
+- Book reviewers and bloggers actively reject AI-generated books
+- Amazon and other retailers may eventually flag AI content
+- Traditional publishing will not accept it
+
+SCORING PENALTIES (MANDATORY):
+- For "Clearly AI-generated": overall_score MUST be between 30-50
+- For "Possibly AI-assisted": overall_score MUST be between 50-65
+- For "Likely human-written": No penalty (70-100 range)
+
+A "Clearly AI-generated" book should NEVER score above 50.
+Even "Possibly AI-assisted" books should never score above 65.
     
     Return JSON with these sections:
     
