@@ -1,4 +1,3 @@
-# BookMarketabilityChecker.py - COMPLETE FIXED VERSION WITH PROPER COVER AI DETECTION
 import streamlit as st
 import openai
 import PyPDF2
@@ -15,6 +14,7 @@ import re
 import zipfile
 from xml.etree import ElementTree
 import fitz  # PyMuPDF for PDF cover extraction
+from mimetypes import guess_type
 
 # Initialize OpenAI with secrets
 client = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
@@ -26,49 +26,83 @@ SENDER_EMAIL = st.secrets["SENDER_EMAIL"]
 SENDER_PASSWORD = st.secrets["SENDER_PASSWORD"]
 USE_TLS = st.secrets.get("use_tls", True)
 
-
 def analyze_cover(cover_file):
-    """Full cover analysis - WITH AI DETECTION built in"""
+    """Full cover analysis - WITH AI DETECTION built in - FIXED VERSION"""
     
     try:
+        # Read file bytes once and reset pointer
+        cover_bytes = cover_file.read()
+        cover_file.seek(0)  # Reset for any future operations
+        
         # Handle PDF files with PyMuPDF
         if cover_file.type == "application/pdf":
             st.info("🔄 Analyzing PDF cover...")
             
             # Open PDF with PyMuPDF
-            pdf_document = fitz.open(stream=cover_file.getvalue(), filetype="pdf")
+            pdf_document = fitz.open(stream=cover_bytes, filetype="pdf")
             
             # Get first page
             first_page = pdf_document[0]
             
-            # Render page to image (higher dpi = better quality)
-            zoom = 2.0  # 2x zoom for better quality
+            # Better quality extraction
+            dpi_target = 250
+            zoom = dpi_target / 72.0  # since default is 72 dpi
             mat = fitz.Matrix(zoom, zoom)
-            pix = first_page.get_pixmap(matrix=mat, alpha=False)
+            
+            # Render page to image with better settings
+            pix = first_page.get_pixmap(
+                matrix=mat, 
+                alpha=False,
+                colorspace=fitz.csRGB
+            )
             
             # Convert to bytes
             img_bytes = pix.tobytes("png")
             cover_base64 = base64.b64encode(img_bytes).decode('utf-8')
+            mime_type = "image/png"  # PDF rendered as PNG
             
             pdf_document.close()
             
+            # Debug preview
+            st.write("Debug — PDF cover extracted, base64 length:", len(cover_base64))
+            if st.checkbox("Show PDF cover preview", key="pdf_preview"):
+                st.image(img_bytes, caption="Extracted PDF cover page")
+            
         else:
-            # Handle regular image formats
-            cover_bytes = cover_file.getvalue()
+            # Handle regular image formats with proper MIME type detection
+            mime_type, _ = guess_type(cover_file.name)
+            if not mime_type or not mime_type.startswith("image/"):
+                mime_type = "image/jpeg"  # fallback
+            
             cover_base64 = base64.b64encode(cover_bytes).decode('utf-8')
+            
+            # Debug preview
+            st.write("Debug — Image base64 length:", len(cover_base64))
+            if st.checkbox("Show image preview", key="img_preview"):
+                st.image(cover_bytes, caption="Uploaded cover")
         
         # Analyze with OpenAI vision - with specific AI detection instructions
         prompt = """Analyze this book cover in detail and determine if it's AI-generated.
         
+        Be conservative. Only say is_ai_generated: true when you see multiple clear red flags.
+        
         Look for these SPECIFIC AI GENERATION INDICATORS:
-        1. TEXT: Any text should be examined - AI often generates gibberish, misspelled words, or nonsensical letters
-        2. HANDS/FINGERS: Count fingers on any hands shown - AI frequently gets numbers wrong or creates malformed digits
+        1. TEXT: Any text should be examined - AI often generates gibberish, misspelled words, or nonsensical letters. Well-drawn readable text suggests human work.
+        2. HANDS/FINGERS: Count fingers on any hands shown - AI frequently gets numbers wrong (6 fingers), creates malformed digits, or has missing fingers. Correct 5-finger hands suggest human work.
         3. ANATOMY: Check for impossible body parts, extra limbs, or strange proportions
         4. LIGHTING: Look for inconsistent light sources or shadows that don't make physical sense
         5. BLENDING: Check for areas where objects "melt" into each other or have unnatural transitions
         6. SYMMETRY: AI often fails at symmetrical elements like faces, buildings, or patterns
         7. PERSPECTIVE: Check if architectural elements follow proper perspective
         8. DETAILS: Look for areas that are overly smooth or lack texture compared to the rest of the image
+        9. MODERN AI ARTIFACTS: Many recent AI covers use very smooth skin, plastic-looking hair, over-saturated colors, missing or fused background elements.
+        
+        INDICATORS OF HUMAN WORK:
+        - Well-drawn realistic hands with correct 5 fingers
+        - Readable and correct book title & author name
+        - Physically plausible shadows
+        - Consistent artistic style throughout
+        - Intentional imperfections that show artistic choices
         
         Return JSON with:
         {
@@ -91,7 +125,7 @@ def analyze_cover(cover_file):
         }"""
         
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="gpt-4o",  # Upgraded from gpt-4o-mini for better AI detection
             messages=[
                 {
                     "role": "user",
@@ -100,14 +134,14 @@ def analyze_cover(cover_file):
                         {
                             "type": "image_url",
                             "image_url": {
-                                "url": f"data:image/jpeg;base64,{cover_base64}"
+                                "url": f"data:{mime_type};base64,{cover_base64}"
                             }
                         }
                     ]
                 }
             ],
             max_tokens=1000,
-            temperature=0.3,
+            temperature=0.2,  # Lower temperature for more consistent results
             response_format={"type": "json_object"}
         )
         
@@ -118,7 +152,6 @@ def analyze_cover(cover_file):
         st.error(f"Cover analysis failed: {e}")
         return None
 
-
 def detect_ai_content(text, cover_analysis=None):
     """
     Analyze text and cover for signs of AI generation
@@ -128,20 +161,18 @@ def detect_ai_content(text, cover_analysis=None):
     cover_indicators = []
     cover_human = []
     cover_ai_summary = ""
-    cover_ai_detected = False
     
     if cover_analysis and 'ai_detection' in cover_analysis:
         ai_detect = cover_analysis['ai_detection']
         cover_indicators = ai_detect.get('indicators_found', [])
-        cover_ai_detected = ai_detect.get('is_ai_generated', False)
         
-        # Get strengths from the main cover analysis
-        cover_human = cover_analysis.get('strengths', [])[:3]
-        
-        if cover_ai_detected:
+        if ai_detect.get('is_ai_generated', False):
             cover_ai_summary = f"Cover appears AI-generated: {ai_detect.get('explanation', '')}"
+            cover_human = []  # NO STRENGTHS FOR AI COVERS
         else:
             cover_ai_summary = f"Cover appears human-designed: {ai_detect.get('explanation', '')}"
+            # Use strengths from the main cover analysis, NOT ai_detection
+            cover_human = cover_analysis.get('strengths', [])[:3]
     
     prompt = f"""
     Analyze this book manuscript excerpt for signs of AI generation.
@@ -151,12 +182,6 @@ def detect_ai_content(text, cover_analysis=None):
     
     COVER ANALYSIS SUMMARY:
     {cover_ai_summary}
-    
-    COVER AI INDICATORS FOUND:
-    {json.dumps(cover_indicators)}
-    
-    COVER HUMAN STRENGTHS:
-    {json.dumps(cover_human)}
     
     Look for these AI indicators in the TEXT:
     - Overuse of common AI transition phrases ("Furthermore", "Moreover", "In conclusion")
@@ -174,7 +199,6 @@ def detect_ai_content(text, cover_analysis=None):
             "human_indicators_found": ["list of human-written signs - e.g., 'unique voice', 'emotional depth']
         }},
         "cover_analysis": {{
-            "is_ai_generated": {str(cover_ai_detected).lower()},
             "indicators_found": {json.dumps(cover_indicators)},
             "human_indicators_found": {json.dumps(cover_human)}
         }},
@@ -202,17 +226,12 @@ def detect_ai_content(text, cover_analysis=None):
         st.error(f"AI detection failed: {e}")
         return {
             "text_analysis": {"indicators_found": [], "human_indicators_found": []},
-            "cover_analysis": {
-                "is_ai_generated": cover_ai_detected,
-                "indicators_found": cover_indicators,
-                "human_indicators_found": cover_human
-            },
+            "cover_analysis": {"indicators_found": cover_indicators, "human_indicators_found": cover_human},
             "overall_assessment": {
                 "conclusion": "Inconclusive",
                 "explanation": "AI detection could not be completed"
             }
         }
-
 
 def send_email(recipient_email, analysis_results, cover_analysis, book_title, author_name, ai_detection_results):
     """Send full analysis results via email with AI detection"""
@@ -237,11 +256,9 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
     text_indicators = ai_detection_results.get('text_analysis', {}).get('indicators_found', [])
     text_human_indicators = ai_detection_results.get('text_analysis', {}).get('human_indicators_found', [])
     
-    # Get cover indicators - FIXED: Properly extract from the new structure
-    cover_analysis_results = ai_detection_results.get('cover_analysis', {})
-    cover_indicators = cover_analysis_results.get('indicators_found', [])
-    cover_human_indicators = cover_analysis_results.get('human_indicators_found', [])
-    cover_is_ai = cover_analysis_results.get('is_ai_generated', False)
+    # Get cover indicators
+    cover_indicators = ai_detection_results.get('cover_analysis', {}).get('indicators_found', [])
+    cover_human_indicators = ai_detection_results.get('cover_analysis', {}).get('human_indicators_found', [])
     
     # Determine styling based on conclusion
     conclusion_lower = ai_conclusion.lower()
@@ -330,54 +347,40 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
             
             <p style="font-size: 16px; margin: 10px 0;"><strong>Analysis:</strong> {ai_message}</p>
             <p style="color: #555;">{ai_explanation}</p>
-    """
-    
-    # Show text indicators
-    if text_indicators or text_human_indicators:
-        body += f"""
+            
+            <!-- Show text indicators -->
+            {f'''
             <div class="indicator-list">
                 <p style="margin: 0 0 10px 0; font-weight: bold;">📝 Text Analysis:</p>
-        """
-        if text_indicators:
-            body += f"""
                 <ul style="margin: 0; color: #555;">
                     {''.join([f'<li style="margin: 5px 0;">{indicator}</li>' for indicator in text_indicators[:5]])}
                 </ul>
-            """
-        if text_human_indicators:
-            body += f"""
+                {f'''
                 <p style="margin: 10px 0 5px 0; font-weight: bold;">✨ Human Qualities:</p>
                 <ul style="margin: 0; color: #555;">
                     {''.join([f'<li style="margin: 5px 0;">{indicator}</li>' for indicator in text_human_indicators[:3]])}
                 </ul>
-            """
-        body += "</div>"
-    
-    # Show cover indicators - FIXED: This is now properly populated
-    if cover_indicators or cover_human_indicators:
-        body += f"""
+                ''' if text_human_indicators else ''}
+            </div>
+            ''' if text_indicators or text_human_indicators else ''}
+            
+            <!-- Show cover indicators - FIXED: THIS IS NOW ACTUALLY HERE -->
+            {f'''
             <div class="indicator-list">
                 <p style="margin: 0 0 10px 0; font-weight: bold;">🎨 Cover Analysis:</p>
-        """
-        if cover_indicators:
-            ai_badge = "🤖 AI-GENERATED" if cover_is_ai else ""
-            body += f"""
-                <p style="margin: 5px 0; font-weight: bold;">{ai_badge}</p>
                 <ul style="margin: 0; color: #555;">
-                    {''.join([f'<li style="margin: 5px 0;">⚠️ {indicator}</li>' for indicator in cover_indicators[:5]])}
+                    {''.join([f'<li style="margin: 5px 0;">{indicator}</li>' for indicator in cover_indicators[:5]])}
                 </ul>
-            """
-        if cover_human_indicators:
-            body += f"""
+                {f'''
                 <p style="margin: 10px 0 5px 0; font-weight: bold;">✨ Cover Strengths:</p>
                 <ul style="margin: 0; color: #555;">
-                    {''.join([f'<li style="margin: 5px 0;">✅ {indicator}</li>' for indicator in cover_human_indicators[:3]])}
+                    {''.join([f'<li style="margin: 5px 0;">{indicator}</li>' for indicator in cover_human_indicators[:3]])}
                 </ul>
-            """
-        body += "</div>"
-    
-    # Show marketing impact
-    body += f"""
+                ''' if cover_human_indicators else ''}
+            </div>
+            ''' if cover_indicators or cover_human_indicators else ''}
+            
+            <!-- Show marketing impact -->
             <div class="marketing-impact">
                 <p style="margin: 0; font-weight: bold;">📢 Marketing Consideration:</p>
                 <p style="margin: 5px 0 0 0; color: #333;">{ai_marketing_note}</p>
@@ -467,7 +470,7 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
         for char in chars.get('main', [])[:3]:
             body += f"""
             <div style="margin-bottom: 15px; padding: 10px; background: white; border-radius: 5px;">
-                <strong>{char.get('name', 'Unknown')}</strong> - {char.get('role', '')}<br>
+                <strong>{char.get('name', 'Unknown')}</strong> - {char.get('role', '')}
                 <p style="margin: 5px 0 0 0; color: #666;">{char.get('description', '')}</p>
             </div>
             """
@@ -577,7 +580,7 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
         if marketing.get('blurb_suggestion'):
             body += f"""
             </ul>
-            <p><strong>Suggested Blurb:</strong><br>
+            <p><strong>Suggested Blurb:</strong>
             <em>{marketing['blurb_suggestion']}</em></p>
             """
         body += "</div>"
@@ -667,7 +670,6 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
     except Exception as e:
         st.error(f"Email sending failed: {e}")
         return False
-
 
 def show_marketability_checker():
     """Marketability checker that delivers FULL analysis via email"""
@@ -793,7 +795,6 @@ def show_marketability_checker():
     else:
         show_results_section()
 
-
 def show_upload_section():
     """Show file upload interface"""
     
@@ -851,7 +852,7 @@ def show_upload_section():
     if manuscript and email:
         if st.button("🔍 GET MY FREE ANALYSIS", type="primary", use_container_width=True):
             with st.spinner("Analyzing your book... (about 60 seconds)"):
-                
+                      
                 # Use pre-extracted text
                 text = st.session_state.text
                 
@@ -897,7 +898,6 @@ def show_upload_section():
             st.info("👆 Please upload your manuscript")
         elif not email:
             st.info("👆 Please enter your email address")
-
 
 def show_results_section():
     """Show results with preview and low score warning if needed"""
@@ -967,7 +967,7 @@ def show_results_section():
         <div style="display: flex; align-items: center;">
             <span style="font-size: 24px; margin-right: 10px;">{ai_icon}</span>
             <div>
-                <strong>{ai_text}</strong><br>
+                <strong>{ai_text}</strong>
                 <span style="color: #666;">{ai_overall.get('explanation', '')}</span>
             </div>
         </div>
@@ -1032,7 +1032,6 @@ def show_results_section():
     
     st.success(f"✅ We've sent your complete analysis to your email!")
 
-
 def extract_text_for_analysis(file):
     """Extract text for analysis only - simplified version"""
     try:
@@ -1070,8 +1069,8 @@ def extract_text_for_analysis(file):
         elif file.type == "application/rtf" or file.type == "text/rtf" or file.name.endswith('.rtf'):
             content = file_bytes.decode("utf-8", errors="ignore")
             text = re.sub(r'\\[a-z]+[0-9-]*', ' ', content)
-            text = re.sub(r'\{[^}]*\}', ' ', text)
-            text = re.sub(r'\\\'[0-9a-f]{2}', ' ', text)
+            text = re.sub(r'{[^}]*}', ' ', text)
+            text = re.sub(r'\'[0-9a-f]{2}', ' ', text)
             return ' '.join(text.split())[:50000]
         
         elif file.type == "application/msword":
@@ -1083,7 +1082,6 @@ def extract_text_for_analysis(file):
     except Exception as e:
         st.error(f"Error extracting text for analysis: {e}")
         return ""
-
 
 def analyze_book_complete(text, cover_analysis, provided_title="", provided_author=""):
     """Complete book analysis based on ACTUAL manuscript text"""
@@ -1323,7 +1321,6 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
     except Exception as e:
         st.error(f"Analysis failed: {str(e)}")
         return None
-
 
 # For running standalone
 if __name__ == "__main__":
