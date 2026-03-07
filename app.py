@@ -17,7 +17,7 @@ from xml.etree import ElementTree
 import tempfile
 import os
 
-# Import the PNG-only cover detector (YOUR PERFECT SCRIPT)
+# Import the PNG-only cover detector
 import ai_cover_detector_gpt4o_mini_png_only as ai_cover
 
 # Initialize OpenAI with secrets
@@ -218,7 +218,7 @@ def detect_ai_content(text, cover_analysis=None):
                 {"role": "system", "content": "You are an expert AI detector with a critical eye. You do not get fooled by polished writing. You look for the subtle patterns that distinguish AI from authentic human voice. Be aggressive in finding AI indicators and conservative about calling something human."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.2,  # Lower temperature for more consistent, critical responses
+            temperature=0.2,
             max_tokens=1000,
             response_format={"type": "json_object"}
         )
@@ -239,6 +239,7 @@ def detect_ai_content(text, cover_analysis=None):
                 "explanation": "AI detection could not be completed"
             }
         }
+
 def send_email(recipient_email, analysis_results, cover_analysis, book_title, author_name, ai_detection_results):
     """Send full analysis results via email with AI detection"""
     
@@ -737,6 +738,256 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
         st.error(f"Email sending failed: {e}")
         return False
 
+def analyze_book_complete(text, cover_analysis, provided_title="", provided_author=""):
+    """Complete book analysis based on ACTUAL manuscript text"""
+    
+    if len(text) > 50000:
+        text = text[:50000] + "... [truncated]"
+    
+    total_len = len(text)
+    beginning = text[:min(5000, total_len//3)]
+    middle = text[total_len//3:total_len//3*2][:5000]
+    ending = text[-5000:]
+    
+    cover_text = ""
+    if cover_analysis:
+        # Fixed: Properly format JSON in f-string by using a variable
+        cover_json = json.dumps(cover_analysis, indent=2)
+        cover_text = f"\nCOVER ANALYSIS:\n{cover_json}"
+    
+    # Extract title and author from first few lines if not provided
+    if provided_title and provided_author:
+        detected_title = provided_title
+        detected_author = provided_author
+    else:
+        first_lines = [line.strip() for line in text[:1000].split('\n') if line.strip()]
+        detected_title = "Unknown Title"
+        detected_author = "Unknown Author"
+        
+        # Improved detection: skip lines that look like URLs or empty
+        for i, line in enumerate(first_lines):
+            if re.match(r'https?://', line) or len(line) < 5:
+                continue
+            if i == 0:
+                detected_title = line
+            if 'by' in line.lower() and len(line) < 100:
+                detected_author = re.sub(r'(?i)by', '', line).strip()
+                break
+        # Fallback if no 'by'
+        if detected_author == "Unknown Author" and len(first_lines) > 1:
+            detected_author = first_lines[1] if len(first_lines[1]) < 50 else "Unknown Author"
+    
+    # GENRE CLASSIFICATION RULES
+    genre_rules = """
+    GENRE CLASSIFICATION RULES - READ CAREFULLY:
+    - If the book is a personal story about the author's own life experiences → use "Memoir"
+    - "Non-Fiction" is ONLY for encyclopedias, textbooks, how-to books, informational guides
+    - DO NOT use "Non-Fiction" for memoirs, biographies, or autobiographies
+    - You can select MULTIPLE genres that fit (e.g., a memoir could also be LGBTQ+ Fiction)
+    - List them in order of relevance
+    """
+    
+    # ALLOWED GENRES LIST WITH DESCRIPTIONS
+    allowed_genres_text = """
+    ALLOWED GENRES (use ONLY these for genre and subgenres):
+    - Romance: Books centered on romantic relationships, love stories, and emotional connections between characters, often with happy endings.
+    - Fantasy: Stories involving magic, mythical creatures, imaginary worlds, quests, or supernatural elements.
+    - Romantasy: A hybrid of romance and fantasy, blending deep romantic relationships with magical worlds, epic quests, and supernatural elements.
+    - Science Fiction: Speculative stories exploring futuristic technology, space exploration, alternate realities, dystopias, or scientific concepts.
+    - Mystery: Narratives built around solving a puzzle, crime, or secret, usually featuring investigation and revelation.
+    - Thriller: Fast-paced, suspenseful stories designed to create tension, danger, and excitement, often with high stakes.
+    - Horror: Stories intended to frighten, disturb, or unsettle readers through fear, the supernatural, or psychological terror.
+    - Young Adult: Fiction aimed at teenagers (roughly ages 12–18), typically featuring coming-of-age themes, identity, and first experiences.
+    - Historical Fiction: Stories set in the past that blend real historical events or settings with fictional characters and plots.
+    - Contemporary Fiction: Modern-day stories focusing on realistic characters, relationships, and everyday life issues.
+    - Literary Fiction: Character-driven, introspective stories that emphasize style, language, themes, and emotional depth over plot.
+    - Children's: Books written for young children, usually with simple language, illustrations, and moral lessons.
+    - Middle Grade: Stories for ages 8–12, often featuring adventure, friendship, family, school life, or light fantasy.
+    - Non-Fiction: Factual writing covering real events, people, ideas, or information. (ONLY for informational books, NOT personal memoirs)
+    - Memoir: Personal, true accounts of the author's own experiences, usually focused on specific themes or periods of life.
+    - Biography: A detailed account of a real person's life, written by someone else, based on research and sources.
+    - Autobiography: A full, chronological account of the author's own entire life, written by the person themselves.
+    - Self-Help: Practical books offering advice, strategies, or guidance for personal improvement, success, health, or happiness.
+    - LGBTQ+ Fiction: Stories that center queer characters, identities, relationships, and experiences.
+    - Paranormal: Fiction involving ghosts, vampires, werewolves, psychics, or other supernatural phenomena.
+    - Graphic Novels: Long-form stories told through sequential art and text, similar in length and complexity to novels.
+    - Comics: Shorter or serialized stories told through panels and illustrations, often in series or anthologies.
+    - Classics: Timeless, influential works of literature that have enduring cultural or literary significance.
+    - Erotica: Fiction that focuses explicitly on sexual desire, arousal, and intimate encounters.
+    
+    IMPORTANT: Genre and subgenres MUST be chosen ONLY from this list. DO NOT invent genres.
+    You can select MULTIPLE genres that fit the book.
+    """
+    
+    prompt = f"""
+    You are a professional literary analyst. Analyze THIS SPECIFIC BOOK based SOLELY on the manuscript excerpts provided below.
+    
+    BOOK TITLE (detected from manuscript): {detected_title}
+    AUTHOR (detected from manuscript): {detected_author}
+    
+    {cover_text}
+    
+    {genre_rules}
+    
+    {allowed_genres_text}
+    
+    ACTUAL MANUSCRIPT EXCERPTS - USE THESE FOR YOUR ANALYSIS:
+    
+    BEGINNING (first 5000 chars):
+    {beginning}
+    
+    MIDDLE (middle 5000 chars):
+    {middle}
+    
+    ENDING (last 5000 chars):
+    {ending}
+    
+    IMPORTANT INSTRUCTIONS:
+    1. The book title MUST be "{detected_title}" in your response
+    2. The author MUST be "{detected_author}" in your response
+    3. Base ALL scores and comments on the ACTUAL text above
+    4. For characters: You MUST identify ALL characters mentioned in the excerpts. For each main character, include:
+       - Their name
+       - Their role (protagonist, antagonist, deuteragonist, confidant, foil, love interest, mentor, etc.)
+       - Description of who they are
+       - How they change (if shown)
+       - What drives them
+       - Their internal or external struggles
+       - Why readers will connect with them
+    5. Include supporting characters and key relationships between characters
+    6. For character_development section, describe how the protagonist evolves, what motivates any antagonist, and how supporting characters change
+    7. For narrative arc: describe what you actually see in these excerpts
+    8. Be specific - reference actual events, names, and details from the text
+    9. For areas_for_improvement: be honest about weaknesses in THIS text
+    
+    SCORING GUIDELINES:
+    - Score each category based on the actual quality of the writing in these excerpts
+    - Consider factors like: prose quality, character development, plot structure, originality, emotional impact
+    - A score of 90-100 represents exceptional, publish-ready quality
+    - A score of 80-89 represents strong quality with minor issues
+    - A score of 70-79 represents good quality with some room for improvement
+    - A score of 60-69 represents average quality with notable issues
+    - A score below 60 represents significant problems that need addressing
+    
+    Return JSON with these sections:
+    
+    {{
+        "marketability": {{
+            "overall_score": (0-100 number based on these excerpts),
+            "overall_grade": ("A", "B", "C", "D", "F" with +/-),
+            "overall_assessment": "One sentence summary of this specific book",
+            "scores": {{
+                "writing_quality": {{"score": 0-100, "explanation": "Based on the prose in these excerpts - be specific"}},
+                "commercial_potential": {{"score": 0-100, "explanation": "Based on the hook and content shown"}},
+                "genre_fit": {{"score": 0-100, "explanation": "How well this matches genre conventions"}},
+                "hook_strength": {{"score": 0-100, "explanation": "Based on the opening excerpt"}},
+                "character_appeal": {{"score": 0-100, "explanation": "Based on characters shown in excerpts"}},
+                "pacing": {{"score": 0-100, "explanation": "Based on flow between beginning, middle, and end"}},
+                "originality": {{"score": 0-100, "explanation": "Unique elements observed in these excerpts"}}
+            }}
+        }},
+        
+        "writing_quality_detailed": {{
+            "prose_quality": "Assessment of sentence-level writing from these excerpts - quote examples",
+            "dialogue": "Quality and naturalness of dialogue from these excerpts - quote examples",
+            "description": "Quality of descriptive passages from these excerpts - quote examples",
+            "voice": "Strength and consistency of narrative voice in these excerpts",
+            "technical_execution": "Grammar, punctuation, formatting in these excerpts"
+        }},
+        
+        "book_info": {{
+            "title": "{detected_title}",
+            "author": "{detected_author}",
+            "genres": ["primary genre from approved list", "secondary genre if applicable", "another if applicable"],
+            "tone": "overall emotional tone from these excerpts",
+            "writing_style": "descriptive/lyrical/direct/etc from these excerpts",
+            "pacing_summary": "fast/medium/slow based on these excerpts"
+        }},
+        
+        "characters": {{
+            "main": [
+                {{
+                    "name": "character name",
+                    "role": "protagonist/antagonist/etc",
+                    "description": "who they are based on excerpts",
+                    "arc": "how they change (if shown)",
+                    "motivation": "what drives them (if shown)",
+                    "conflict": "internal or external struggles (if shown)",
+                    "appeal_factor": "Why readers will connect with this character"
+                }}
+            ],
+            "supporting": ["list of supporting characters mentioned"],
+            "relationships": ["key dynamics between characters shown or implied"]
+        }},
+        
+        "character_development": {{
+            "protagonist_journey": "how the main character changes based on excerpts",
+            "antagonist_motivation": "what drives the opposition (if present)",
+            "supporting_arcs": ["how other characters evolve (if shown)"]
+        }},
+        
+        "narrative_arc": {{
+            "exposition": "setup shown in beginning excerpt",
+            "rising_action": "events in middle excerpt",
+            "climax": "turning point in excerpts (if any)",
+            "falling_action": "aftermath in ending excerpt (if any)",
+            "resolution": "conclusion shown in ending excerpt"
+        }},
+        
+        "plot": {{
+            "opening_hook": "what grabs attention in the first 500 chars",
+            "inciting_incident": "what starts the story (if shown)",
+            "major_plot_points": ["point1 from excerpts", "point2 from excerpts"],
+            "plot_twists": ["any surprises in excerpts"]
+        }},
+        
+        "themes": {{
+            "primary": ["main themes visible in excerpts"],
+            "secondary": ["other themes hinted at"]
+        }},
+        
+        "strengths": ["5 specific strengths of THIS manuscript with examples from the text"],
+        
+        "areas_for_improvement": ["5 specific weaknesses in THIS manuscript with concrete suggestions based on the text"],
+        
+        "target_audience": {{
+            "primary": "who would enjoy THIS specific book",
+            "appeal": "why they'd enjoy it based on these excerpts"
+        }},
+        
+        "marketing": {{
+            "unique_selling_points": ["what makes THIS specific book special based on excerpts"],
+            "blurb_suggestion": "A potential back-cover blurb based on THIS content"
+        }}
+    }}
+    """
+    
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a literary analyst. Return valid JSON only. Base your analysis strictly on the provided excerpts. Do not make assumptions about AI generation - simply analyze the text as presented."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.4,
+            max_tokens=4000,
+            response_format={"type": "json_object"}
+        )
+        
+        result = json.loads(response.choices[0].message.content)
+        
+        # Ensure title and author are set
+        if 'book_info' not in result:
+            result['book_info'] = {}
+        result['book_info']['title'] = detected_title
+        result['book_info']['author'] = detected_author
+        
+        return result
+        
+    except Exception as e:
+        st.error(f"Analysis failed: {str(e)}")
+        return None
+
 def show_marketability_checker():
     """Marketability checker that delivers FULL analysis via email"""
     
@@ -865,6 +1116,8 @@ def show_marketability_checker():
         st.session_state.text = None
     if 'ai_detection' not in st.session_state:
         st.session_state.ai_detection = None
+    if 'cover_file' not in st.session_state:
+        st.session_state.cover_file = None
     
     if not st.session_state.analysis_complete:
         show_upload_section()
@@ -937,8 +1190,8 @@ def show_upload_section():
                 
                 # Process cover if provided
                 cover_analysis = None
-                if cover:
-                    cover_analysis = analyze_cover(cover)
+                if st.session_state.cover_file:
+                    cover_analysis = analyze_cover(st.session_state.cover_file)
                     st.session_state.cover_analysis = cover_analysis
                 
                 # Run AI detection first
@@ -1157,275 +1410,6 @@ def extract_text_for_analysis(file):
     except Exception as e:
         st.error(f"Error extracting text for analysis: {e}")
         return ""
-
-def analyze_book_complete(text, cover_analysis, provided_title="", provided_author=""):
-    """Complete book analysis based on ACTUAL manuscript text"""
-    
-    if len(text) > 50000:
-        text = text[:50000] + "... [truncated]"
-    
-    total_len = len(text)
-    beginning = text[:min(5000, total_len//3)]
-    middle = text[total_len//3:total_len//3*2][:5000]
-    ending = text[-5000:]
-    
-    cover_text = ""
-    if cover_analysis:
-        # Fixed: Properly format JSON in f-string by using a variable
-    
-    # Extract title and author from first few lines if not provided
-    if provided_title and provided_author:
-        detected_title = provided_title
-        detected_author = provided_author
-    else:
-        first_lines = [line.strip() for line in text[:1000].split('\n') if line.strip()]
-        detected_title = "Unknown Title"
-        detected_author = "Unknown Author"
-        
-        # Improved detection: skip lines that look like URLs or empty
-        for i, line in enumerate(first_lines):
-            if re.match(r'https?://', line) or len(line) < 5:
-                continue
-            if i == 0:
-                detected_title = line
-            if 'by' in line.lower() and len(line) < 100:
-                detected_author = re.sub(r'(?i)by', '', line).strip()
-                break
-        # Fallback if no 'by'
-        if detected_author == "Unknown Author" and len(first_lines) > 1:
-            detected_author = first_lines[1] if len(first_lines[1]) < 50 else "Unknown Author"
-    
-    # GENRE CLASSIFICATION RULES
-    genre_rules = """
-    GENRE CLASSIFICATION RULES - READ CAREFULLY:
-    - If the book is a personal story about the author's own life experiences → use "Memoir"
-    - "Non-Fiction" is ONLY for encyclopedias, textbooks, how-to books, informational guides
-    - DO NOT use "Non-Fiction" for memoirs, biographies, or autobiographies
-    - You can select MULTIPLE genres that fit (e.g., a memoir could also be LGBTQ+ Fiction)
-    - List them in order of relevance
-    """
-    
-    # ALLOWED GENRES LIST WITH DESCRIPTIONS
-    allowed_genres_text = """
-    ALLOWED GENRES (use ONLY these for genre and subgenres):
-    - Romance: Books centered on romantic relationships, love stories, and emotional connections between characters, often with happy endings.
-    - Fantasy: Stories involving magic, mythical creatures, imaginary worlds, quests, or supernatural elements.
-    - Romantasy: A hybrid of romance and fantasy, blending deep romantic relationships with magical worlds, epic quests, and supernatural elements.
-    - Science Fiction: Speculative stories exploring futuristic technology, space exploration, alternate realities, dystopias, or scientific concepts.
-    - Mystery: Narratives built around solving a puzzle, crime, or secret, usually featuring investigation and revelation.
-    - Thriller: Fast-paced, suspenseful stories designed to create tension, danger, and excitement, often with high stakes.
-    - Horror: Stories intended to frighten, disturb, or unsettle readers through fear, the supernatural, or psychological terror.
-    - Young Adult: Fiction aimed at teenagers (roughly ages 12–18), typically featuring coming-of-age themes, identity, and first experiences.
-    - Historical Fiction: Stories set in the past that blend real historical events or settings with fictional characters and plots.
-    - Contemporary Fiction: Modern-day stories focusing on realistic characters, relationships, and everyday life issues.
-    - Literary Fiction: Character-driven, introspective stories that emphasize style, language, themes, and emotional depth over plot.
-    - Children's: Books written for young children, usually with simple language, illustrations, and moral lessons.
-    - Middle Grade: Stories for ages 8–12, often featuring adventure, friendship, family, school life, or light fantasy.
-    - Non-Fiction: Factual writing covering real events, people, ideas, or information. (ONLY for informational books, NOT personal memoirs)
-    - Memoir: Personal, true accounts of the author's own experiences, usually focused on specific themes or periods of life.
-    - Biography: A detailed account of a real person's life, written by someone else, based on research and sources.
-    - Autobiography: A full, chronological account of the author's own entire life, written by the person themselves.
-    - Self-Help: Practical books offering advice, strategies, or guidance for personal improvement, success, health, or happiness.
-    - LGBTQ+ Fiction: Stories that center queer characters, identities, relationships, and experiences.
-    - Paranormal: Fiction involving ghosts, vampires, werewolves, psychics, or other supernatural phenomena.
-    - Graphic Novels: Long-form stories told through sequential art and text, similar in length and complexity to novels.
-    - Comics: Shorter or serialized stories told through panels and illustrations, often in series or anthologies.
-    - Classics: Timeless, influential works of literature that have enduring cultural or literary significance.
-    - Erotica: Fiction that focuses explicitly on sexual desire, arousal, and intimate encounters.
-    
-    IMPORTANT: Genre and subgenres MUST be chosen ONLY from this list. DO NOT invent genres.
-    You can select MULTIPLE genres that fit the book.
-    """
-    
-    prompt = f"""
-    You are a professional literary analyst. Analyze THIS SPECIFIC BOOK based SOLELY on the manuscript excerpts provided below.
-    
-    BOOK TITLE (detected from manuscript): {detected_title}
-    AUTHOR (detected from manuscript): {detected_author}
-    
-    {cover_text}
-    
-    {genre_rules}
-    
-    {allowed_genres_text}
-    
-    ACTUAL MANUSCRIPT EXCERPTS - USE THESE FOR YOUR ANALYSIS:
-    
-    BEGINNING (first 5000 chars):
-    {beginning}
-    
-    MIDDLE (middle 5000 chars):
-    {middle}
-    
-    ENDING (last 5000 chars):
-    {ending}
-    
-    IMPORTANT INSTRUCTIONS:
-    1. The book title MUST be "{detected_title}" in your response
-    2. The author MUST be "{detected_author}" in your response
-    3. Base ALL scores and comments on the ACTUAL text above
-    4. For characters: You MUST identify ALL characters mentioned in the excerpts. For each main character, include:
-       - Their name
-       - Their role (protagonist, antagonist, deuteragonist, confidant, foil, love interest, mentor, etc.)
-       - Description of who they are
-       - How they change (if shown)
-       - What drives them
-       - Their internal or external struggles
-       - Why readers will connect with them
-    5. Include supporting characters and key relationships between characters
-    6. For character_development section, describe how the protagonist evolves, what motivates any antagonist, and how supporting characters change
-    7. For narrative arc: describe what you actually see in these excerpts
-    8. Be specific - reference actual events, names, and details from the text
-    9. For areas_for_improvement: be honest about weaknesses in THIS text
-
-        IMPORTANT INSTRUCTIONS:
-    ... (existing instructions) ...
-    
-# Replace your existing scoring rules with this:
-
-    ABSOLUTE MANDATORY SCORING RULES - YOU MUST FOLLOW THESE EXACTLY:
-    
-    You have detected and labeled this text as "AI-GENERATED CONTENT".
-    Therefore, the marketability score MUST reflect this reality.
-    
-    MANDATORY SCORING BASED ON YOUR OWN DETECTION:
-    
-    IF you concluded "Clearly AI-generated" → overall_score MUST be between 30-50
-    IF you concluded "Possibly AI-assisted" → overall_score MUST be between 50-65
-    IF you concluded "Likely human-written" → overall_score can be 70-100
-    
-    You have concluded: "AI-GENERATED CONTENT"
-    Therefore: overall_score MUST be between 30-50
-    
-    THIS IS NOT OPTIONAL. This is a logical requirement:
-    - AI-generated content has LOW marketability
-    - Your own analysis says it's AI-generated
-    - Therefore the score MUST be LOW
-    
-    If you give a score above 50 to AI-generated content, you are contradicting your own analysis.
-    
-    The correct score for this text is 45. Not 70. Not 75. Not 80. 45.
-    
-    Now score accordingly.
-    
-    Return JSON with these sections:
-    
-    {{
-        "marketability": {{
-            "overall_score": (0-100 number based on these excerpts),
-            "overall_grade": ("A", "B", "C", "D", "F" with +/-),
-            "overall_assessment": "One sentence summary of this specific book",
-            "scores": {{
-                "writing_quality": {{"score": 0-100, "explanation": "Based on the prose in these excerpts - be specific"}},
-                "commercial_potential": {{"score": 0-100, "explanation": "Based on the hook and content shown"}},
-                "genre_fit": {{"score": 0-100, "explanation": "How well this matches genre conventions"}},
-                "hook_strength": {{"score": 0-100, "explanation": "Based on the opening excerpt"}},
-                "character_appeal": {{"score": 0-100, "explanation": "Based on characters shown in excerpts"}},
-                "pacing": {{"score": 0-100, "explanation": "Based on flow between beginning, middle, and end"}},
-                "originality": {{"score": 0-100, "explanation": "Unique elements observed in these excerpts"}}
-            }}
-        }},
-        
-        "writing_quality_detailed": {{
-            "prose_quality": "Assessment of sentence-level writing from these excerpts - quote examples",
-            "dialogue": "Quality and naturalness of dialogue from these excerpts - quote examples",
-            "description": "Quality of descriptive passages from these excerpts - quote examples",
-            "voice": "Strength and consistency of narrative voice in these excerpts",
-            "technical_execution": "Grammar, punctuation, formatting in these excerpts"
-        }},
-        
-        "book_info": {{
-            "title": "{detected_title}",
-            "author": "{detected_author}",
-            "genres": ["primary genre from approved list", "secondary genre if applicable", "another if applicable"],
-            "tone": "overall emotional tone from these excerpts",
-            "writing_style": "descriptive/lyrical/direct/etc from these excerpts",
-            "pacing_summary": "fast/medium/slow based on these excerpts"
-        }},
-        
-        "characters": {{
-            "main": [
-                {{
-                    "name": "character name",
-                    "role": "protagonist/antagonist/etc",
-                    "description": "who they are based on excerpts",
-                    "arc": "how they change (if shown)",
-                    "motivation": "what drives them (if shown)",
-                    "conflict": "internal or external struggles (if shown)",
-                    "appeal_factor": "Why readers will connect with this character"
-                }}
-            ],
-            "supporting": ["list of supporting characters mentioned"],
-            "relationships": ["key dynamics between characters shown or implied"]
-        }},
-        
-        "character_development": {{
-            "protagonist_journey": "how the main character changes based on excerpts",
-            "antagonist_motivation": "what drives the opposition (if present)",
-            "supporting_arcs": ["how other characters evolve (if shown)"]
-        }},
-        
-        "narrative_arc": {{
-            "exposition": "setup shown in beginning excerpt",
-            "rising_action": "events in middle excerpt",
-            "climax": "turning point in excerpts (if any)",
-            "falling_action": "aftermath in ending excerpt (if any)",
-            "resolution": "conclusion shown in ending excerpt"
-        }},
-        
-        "plot": {{
-            "opening_hook": "what grabs attention in the first 500 chars",
-            "inciting_incident": "what starts the story (if shown)",
-            "major_plot_points": ["point1 from excerpts", "point2 from excerpts"],
-            "plot_twists": ["any surprises in excerpts"]
-        }},
-        
-        "themes": {{
-            "primary": ["main themes visible in excerpts"],
-            "secondary": ["other themes hinted at"]
-        }},
-        
-        "strengths": ["5 specific strengths of THIS manuscript with examples from the text"],
-        
-        "areas_for_improvement": ["5 specific weaknesses in THIS manuscript with concrete suggestions based on the text"],
-        
-        "target_audience": {{
-            "primary": "who would enjoy THIS specific book",
-            "appeal": "why they'd enjoy it based on these excerpts"
-        }},
-        
-        "marketing": {{
-            "unique_selling_points": ["what makes THIS specific book special based on excerpts"],
-            "blurb_suggestion": "A potential back-cover blurb based on THIS content"
-        }}
-    }}
-    """
-    
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "You are a literary analyst. Return valid JSON only. Base your analysis strictly on the provided excerpts."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.4,
-            max_tokens=4000,
-            response_format={"type": "json_object"}
-        )
-        
-        result = json.loads(response.choices[0].message.content)
-        
-        # Ensure title and author are set
-        if 'book_info' not in result:
-            result['book_info'] = {}
-        result['book_info']['title'] = detected_title
-        result['book_info']['author'] = detected_author
-        
-        return result
-        
-    except Exception as e:
-        st.error(f"Analysis failed: {str(e)}")
-        return None
 
 # For running standalone
 if __name__ == "__main__":
