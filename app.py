@@ -1,4 +1,4 @@
-# BookMarketabilityChecker.py - COMPLETE FIXED VERSION WITH PNG-ONLY COVER DETECTOR
+# BookMarketabilityChecker.py - FIXED VERSION WITH CONSERVATIVE AI DETECTION AND COVER FIXES
 import streamlit as st
 import openai
 import PyPDF2
@@ -139,9 +139,9 @@ def detect_ai_content(text, cover_analysis=None):
             cover_human = []
     
     prompt = f"""
-    You are an EXPERT AI detector with a VERY CRITICAL eye. Your job is to identify AI-generated text, not to be fooled by it.
+    You are an EXPERT AI detector with a BALANCED, CONSERVATIVE approach. Your job is to accurately identify AI-generated text without false positives. Only flag as AI if there is STRONG evidence.
     
-    Analyze this book manuscript excerpt for signs of AI generation. Be AGGRESSIVE in finding AI indicators.
+    Analyze this book manuscript excerpt for signs of AI generation. Be CONSERVATIVE - prefer "Inconclusive" or "Likely human-written" unless multiple clear AI indicators are present. Consider that professional human writing can be polished and structured.
     
     MANUSCRIPT EXCERPT:
     {text[:10000]}  # First 10,000 chars for analysis
@@ -149,48 +149,41 @@ def detect_ai_content(text, cover_analysis=None):
     COVER ANALYSIS SUMMARY:
     {cover_ai_summary}
     
-    ===== COMMON AI TEXT PATTERNS (LOOK FOR THESE) =====
+    ===== COMMON AI TEXT PATTERNS (LOOK FOR THESE ONLY IF CLEARLY PRESENT) =====
     
-    STRUCTURAL AI INDICATORS:
-    - Perfectly structured paragraphs with clear topic sentences
-    - Overly neat section divisions (Early Years, The Formative Years, etc.)
-    - Artificial progression that feels templated
-    - No rough edges or natural digressions
+    STRUCTURAL AI INDICATORS (only if excessive):
+    - Unnaturally perfect structure with no variation
+    - Repetitive paragraph patterns
     
-    LINGUISTIC AI INDICATORS:
-    - Overuse of transition phrases: "furthermore," "moreover," "in conclusion," "it is important to note," "subsequently," "over the ensuing decades"
-    - Generic emotional language: "profound moments," "deep within my soul," "filled with gratitude," "ignited a passion"
-    - Inspirational clichés: "the sky belongs to those willing to reach for it," "meaningful achievements require sacrifice"
-    - Too-perfect grammar with no stylistic quirks or informality
-    - Vague descriptions lacking specific sensory details
+    LINGUISTIC AI INDICATORS (only if overused):
+    - Excessive transition phrases without purpose
+    - Generic, vague emotional language lacking specificity
+    - Clichés that feel forced
     
-    CONTENT AI INDICATORS:
-    - Generic names: "Captain James Mitchell," "small Midwestern town," "local grocery store"
-    - Missing specific real-world details (no exact prices, no real locations, no authentic anecdotes)
-    - No self-deprecation or humor
-    - Everything is positive and uplifting - no struggle, frustration, or failure
-    - Hallucinated or generic memories that lack authenticity
-    - Telling instead of showing
+    CONTENT AI INDICATORS (only if dominant):
+    - Lack of specific, unique details
+    - Hallucinated facts or inconsistencies
+    - Overly positive without nuance
     
-    ===== HUMAN WRITING INDICATORS (RARE) =====
+    ===== HUMAN WRITING INDICATORS (LOOK FOR THESE ACTIVELY) =====
     
-    Only consider these as human indicators if MULTIPLE are present:
-    - Self-deprecating humor ("I doubt anyone would be interested")
-    - Specific mundane details ($14 per hour, Volkswagen broke down, couldn't pay the bill)
-    - Natural digressions and tangents that break the narrative flow
-    - Understatement ("I had some adventures but I won't go into them")
-    - Imperfect grammar or sentence fragments that reflect authentic voice
-    - Specific real names, places, dates, and prices
-    - Complaints, frustrations, or negative experiences
-    - Rambling that feels unpolished and真实
+    Consider these as strong evidence of human writing:
+    - Unique personal anecdotes with specific details (e.g., exact locations, prices, sensory memories)
+    - Self-deprecation, humor, or irony
+    - Natural digressions or tangents
+    - Varied sentence lengths and structures
+    - Authentic emotional nuance (mix of positive/negative)
+    - Specific cultural or historical references
+    - Imperfections like minor repetitions or informal phrasing
+    - Professional polish (human authors can write well too)
     
-    ===== DECISION RULES =====
-    - "Clearly AI-generated": Multiple AI indicators present, few to no human indicators
-    - "Possibly AI-assisted": Mix of AI patterns and some human elements
-    - "Likely human-written": Strong human indicators throughout, few AI patterns
-    - "Inconclusive": Unclear or insufficient evidence
+    ===== DECISION RULES (CONSERVATIVE) =====
+    - "Clearly AI-generated": ONLY if STRONG multiple AI indicators AND NO human indicators
+    - "Possibly AI-assisted": Some AI patterns but also human elements
+    - "Likely human-written": Any human indicators present, few AI patterns
+    - "Inconclusive": Insufficient evidence or balanced indicators
     
-    Be CONSERVATIVE about calling something human. If the text reads like a polished memoir with generic emotional language and no specific details, flag it as AI.
+    Err on the side of human-written for polished professional text. Require clear evidence for AI flags.
     
     Return JSON with:
     {{
@@ -215,7 +208,7 @@ def detect_ai_content(text, cover_analysis=None):
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You are an expert AI detector with a critical eye. You do not get fooled by polished writing. You look for the subtle patterns that distinguish AI from authentic human voice. Be aggressive in finding AI indicators and conservative about calling something human."},
+                {"role": "system", "content": "You are an expert AI detector with a conservative approach. Avoid false positives by requiring strong evidence for AI detection. Recognize that human professional writing can be structured and polished."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.2,
@@ -751,7 +744,6 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
     
     cover_text = ""
     if cover_analysis:
-        # Fixed: Properly format JSON in f-string by using a variable
         cover_json = json.dumps(cover_analysis, indent=2)
         cover_text = f"\nCOVER ANALYSIS:\n{cover_json}"
     
@@ -1188,10 +1180,12 @@ def show_upload_section():
                 # Use pre-extracted text
                 text = st.session_state.text
                 
-                # Process cover if provided
+                # Process cover if provided - Ensure it's analyzed
                 cover_analysis = None
                 if st.session_state.cover_file:
                     cover_analysis = analyze_cover(st.session_state.cover_file)
+                    if cover_analysis is None:
+                        st.warning("Cover analysis skipped due to error, but proceeding with text analysis.")
                     st.session_state.cover_analysis = cover_analysis
                 
                 # Run AI detection first
