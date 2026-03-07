@@ -1164,19 +1164,23 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
     if len(text) > 50000:
         text = text[:50000] + "... [truncated]"
     
-    total_len = len(text)
-    beginning = text[:min(5000, total_len//3)]
-    middle = text[total_len//3:total_len//3*2][:5000]
-    ending = text[-5000:]
-    
-    cover_text = ""
-    if cover_analysis:
-        # Fixed: Properly format JSON in f-string by using a variable
-    
-    # Extract title and author from first few lines if not provided
-    if provided_title and provided_author:
-        detected_title = provided_title
-        detected_author = provided_author
+total_len = len(text)
+beginning = text[:min(5000, total_len//3)]
+middle = text[total_len//3:total_len//3*2][:5000]
+ending = text[-min(5000, total_len//3):]  # Make ending consistent
+
+cover_text = ""
+if cover_analysis:  # Make sure cover_analysis is defined elsewhere
+    cover_text = f"Cover analysis: {cover_analysis}"
+
+# Extract title and author from first few lines if not provided
+if provided_title and provided_author:
+    detected_title = provided_title
+    detected_author = provided_author
+else:
+    first_lines = [line.strip() for line in text[:1000].split('\n') if line.strip()]
+    detected_title = "Unknown Title"
+    detected_author = "Unknown Author"
     else:
         first_lines = [line.strip() for line in text[:1000].split('\n') if line.strip()]
         detected_title = "Unknown Title"
