@@ -1,4 +1,4 @@
-# BookMarketabilityChecker.py - COMPLETE WORKING VERSION
+# BookMarketabilityChecker.py - COMPLETE WORKING VERSION WITH EMAIL
 import streamlit as st
 import openai
 import PyPDF2
@@ -15,6 +15,13 @@ import re
 import tempfile
 import os
 
+# Page config must be first
+st.set_page_config(
+    page_title="Book Marketability Analyzer",
+    page_icon="📚",
+    layout="wide"
+)
+
 # Try to import the cover detector, but don't fail if it's not available
 try:
     import ai_cover_detector_gpt4o_mini_png_only as ai_cover
@@ -30,12 +37,15 @@ else:
     st.error("OpenAI API key not found in secrets!")
     st.stop()
 
-# Email config from secrets
-SMTP_SERVER = st.secrets.get("SMTP_SERVER", "")
-SMTP_PORT = st.secrets.get("SMTP_PORT", 587)
-SENDER_EMAIL = st.secrets.get("SENDER_EMAIL", "")
-SENDER_PASSWORD = st.secrets.get("SENDER_PASSWORD", "")
+# Email config from secrets - USING YOUR WORKING SETTINGS
+SMTP_SERVER = st.secrets["SMTP_SERVER"]  # "smtp.hostinger.com"
+SMTP_PORT = st.secrets["SMTP_PORT"]      # 587
+SENDER_EMAIL = st.secrets["SENDER_EMAIL"] # "dev@bardspark.com"
+SENDER_PASSWORD = st.secrets["SENDER_PASSWORD"] # "AntEater1959*"
 USE_TLS = st.secrets.get("use_tls", True)
+
+# Editor email constant
+EDITOR_EMAIL = "editor@bardspark.com"
 
 # Load CSS
 def load_css():
@@ -44,7 +54,16 @@ def load_css():
             css = f.read()
         st.markdown(f'<style>{css}</style>', unsafe_allow_html=True)
     except FileNotFoundError:
-        st.warning("CSS file not found. Using default styling.")
+        # Default styling if CSS not found
+        st.markdown("""
+        <style>
+        .stApp { background: #f5f5f5; }
+        .main .block-container { background: white; border-radius: 20px; padding: 2rem; box-shadow: 0 10px 40px rgba(0,0,0,0.1); }
+        h1 { color: #333; text-align: center; }
+        .stButton > button { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border-radius: 25px; padding: 12px 30px; font-weight: 600; width: 100%; }
+        .footer { text-align: center; color: #666; font-size: 12px; margin-top: 3rem; padding-top: 1rem; border-top: 1px solid #e0e0e0; }
+        </style>
+        """, unsafe_allow_html=True)
 
 def extract_text_from_pdf(pdf_file):
     """Extract text from PDF file"""
@@ -209,9 +228,9 @@ def detect_ai_content(text, cover_analysis=None):
         "text_analysis": {{
             "indicators_found": [],
             "human_indicators_found": [],
-            "conclusion": "Likely human-written",
-            "explanation": "Detailed reasoning",
-            "confidence": 85
+            "conclusion": "string",
+            "explanation": "string",
+            "confidence": 0-100
         }}
     }}
     """
@@ -381,16 +400,261 @@ def analyze_book_complete(text, cover_analysis=None):
         return None
 
 def send_email(recipient_email, analysis_results, cover_analysis, book_title, author_name, ai_detection_results):
-    """Send full analysis results via email"""
+    """Send full analysis results via email to user AND editor@bardspark.com"""
     
     subject = f"Your Complete Book Analysis: {book_title} by {author_name}"
+    editor_subject = f"Book Analysis for {recipient_email}: {book_title} by {author_name}"
     
-    # For now, just return True to indicate success
-    # In production, you'd implement actual email sending
+    # Get marketability score
+    marketability = analysis_results.get('marketability', {})
+    overall_score = marketability.get('overall_score', 0)
+    
+    # Format the email body with FULL analysis
+    book_info = analysis_results.get('book_info', {})
+    
+    # Get SEPARATE AI detection results
+    text_ai = ai_detection_results.get('text', {})
+    text_conclusion = text_ai.get('conclusion', 'Inconclusive')
+    text_explanation = text_ai.get('explanation', '')
+    text_confidence = text_ai.get('confidence', 0)
+    text_indicators = text_ai.get('indicators_found', [])
+    text_human_indicators = text_ai.get('human_indicators_found', [])
+    
+    cover_ai = ai_detection_results.get('cover', {})
+    cover_conclusion = cover_ai.get('conclusion', 'inconclusive')
+    cover_explanation = cover_ai.get('explanation', '')
+    cover_confidence = cover_ai.get('confidence', 0)
+    cover_indicators = cover_ai.get('indicators_found', [])
+    cover_human_indicators = cover_ai.get('human_indicators_found', [])
+    
+    # Styling for TEXT AI
+    text_lower = text_conclusion.lower()
+    if 'human' in text_lower:
+        text_bg = "#e8f5e8"
+        text_border = "#4caf50"
+        text_icon = "✍️✅"
+        text_title = "TEXT: HUMAN-GENERATED"
+        text_message = "The manuscript text appears authentically human-written"
+        text_marketing_note = "Marketing Impact: Human-written quality builds authentic reader connections."
+    elif 'ai-generated' in text_lower:
+        text_bg = "#ffebee"
+        text_border = "#f44336"
+        text_icon = "🤖⚠️"
+        text_title = "TEXT: AI-GENERATED"
+        text_message = "The manuscript text shows strong signs of AI generation"
+        text_marketing_note = "Marketing Impact: AI text may lack emotional depth; revise for unique voice."
+    elif 'assisted' in text_lower:
+        text_bg = "#fff3e0"
+        text_border = "#ff9800"
+        text_icon = "🤖❓"
+        text_title = "TEXT: POSSIBLE AI ASSISTANCE"
+        text_message = "The manuscript text may have used AI assistance"
+        text_marketing_note = "Marketing Impact: Ensure unique voice to build reader loyalty."
+    else:
+        text_bg = "#f5f5f5"
+        text_border = "#999999"
+        text_icon = "❓"
+        text_title = "TEXT: INCONCLUSIVE"
+        text_message = "Text analysis could not determine clearly"
+        text_marketing_note = "Marketing Impact: Get professional review for authenticity."
+
+    # Styling for COVER AI
+    if cover_conclusion == "Clearly AI-generated":
+        cover_bg = "#ffebee"
+        cover_border = "#f44336"
+        cover_icon = "🤖⚠️"
+        cover_title = "COVER: AI-GENERATED"
+        cover_message = "The cover shows signs of AI generation"
+        cover_marketing_note = "Marketing Impact: AI covers can look generic; consider professional redesign."
+    elif cover_conclusion == "Likely human-written":
+        cover_bg = "#e8f5e8"
+        cover_border = "#4caf50"
+        cover_icon = "🎨✅"
+        cover_title = "COVER: HUMAN-DESIGNED"
+        cover_message = "The cover appears human-designed"
+        cover_marketing_note = "Marketing Impact: Professional covers attract more readers."
+    else:
+        cover_bg = "#f5f5f5"
+        cover_border = "#999999"
+        cover_icon = "❓"
+        cover_title = "COVER: INCONCLUSIVE"
+        cover_message = "Cover analysis could not determine clearly"
+        cover_marketing_note = "Marketing Impact: Get feedback on cover design."
+
+    # Build the email body
+    body = f"""
+    <html>
+    <head>
+        <style>
+            body {{ font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; }}
+            .header {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; border-radius: 10px; color: white; text-align: center; }}
+            .ai-section {{ padding: 20px; margin: 20px 0; border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
+            .ai-icon {{ font-size: 24px; margin-right: 10px; }}
+            .ai-title {{ font-size: 18px; font-weight: bold; }}
+            .indicator-list {{ background: white; padding: 15px; border-radius: 8px; margin: 15px 0; }}
+            .marketing-impact {{ padding: 15px; border-radius: 8px; margin-top: 15px; }}
+            .score-box {{ text-align: center; padding: 30px; background: linear-gradient(135deg, #00b09b 0%, #96c93d 100%); border-radius: 10px; margin: 20px 0; color: white; }}
+            .score-number {{ font-size: 72px; font-weight: bold; margin: 0; line-height: 1; }}
+            .score-label {{ font-size: 24px; margin: 10px 0 0; opacity: 0.9; }}
+            .section {{ padding: 20px; background: #f8f9fa; border-radius: 10px; margin-top: 20px; }}
+            .warning-box {{ background: #fff3cd; border: 2px solid #ff8800; border-radius: 10px; padding: 30px; margin: 20px 0; }}
+            .success-box {{ background: #d4edda; border: 2px solid #28a745; border-radius: 10px; padding: 30px; margin: 20px 0; }}
+            .cta-box {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; padding: 30px; color: white; text-align: center; margin: 20px 0; }}
+            .cta-button {{ background: white; color: #667eea; padding: 12px 30px; text-decoration: none; border-radius: 25px; font-weight: bold; display: inline-block; margin-top: 10px; }}
+        </style>
+    </head>
+    <body>
+        <div class="header">
+            <h1>Your Complete Book Analysis</h1>
+            <h2 style="font-size: 32px; margin: 10px 0;">{book_title}</h2>
+            <h3 style="font-size: 20px; margin: 0 0 20px 0; opacity: 0.9;">by {author_name}</h3>
+        </div>
+        
+        <!-- TEXT AI DETECTION SECTION -->
+        <div class="ai-section" style="background: {text_bg}; border-left: 5px solid {text_border};">
+            <div style="display: flex; align-items: center; margin-bottom: 15px;">
+                <span class="ai-icon">{text_icon}</span>
+                <div>
+                    <span class="ai-title">{text_title}</span>
+                    <span> ({text_confidence}% confidence)</span>
+                </div>
+            </div>
+            <p style="font-size: 16px; margin: 10px 0;"><strong>Analysis:</strong> {text_message}</p>
+            <p style="color: #555;">{text_explanation}</p>
+            
+            <div class="indicator-list">
+                <p style="margin: 0 0 10px 0; font-weight: bold;">📝 Text Indicators:</p>
+                {f'<p style="margin: 5px 0; color: #d32f2f;">⚠️ AI Indicators:</p><ul style="margin: 0 0 15px 0; color: #555;">' + ''.join([f'<li style="margin: 5px 0;">{indicator}</li>' for indicator in text_indicators[:5]]) + '</ul>' if text_indicators else ''}
+                {f'<p style="margin: 5px 0; color: #2e7d32;">✨ Human Qualities:</p><ul style="margin: 0; color: #555;">' + ''.join([f'<li style="margin: 5px 0;">{indicator}</li>' for indicator in text_human_indicators[:3]]) + '</ul>' if text_human_indicators else ''}
+            </div>
+            
+            <div class="marketing-impact" style="border-left: 3px solid {text_border}; background: rgba(255,255,255,0.7);">
+                <p style="margin: 0; font-weight: bold;">📢 Marketing Consideration:</p>
+                <p style="margin: 5px 0 0 0; color: #333;">{text_marketing_note}</p>
+            </div>
+        </div>
+        
+        <!-- COVER AI DETECTION SECTION -->
+        {f'''
+        <div class="ai-section" style="background: {cover_bg}; border-left: 5px solid {cover_border};">
+            <div style="display: flex; align-items: center; margin-bottom: 15px;">
+                <span class="ai-icon">{cover_icon}</span>
+                <div>
+                    <span class="ai-title">{cover_title}</span>
+                    <span> ({cover_confidence}% confidence)</span>
+                </div>
+            </div>
+            <p style="font-size: 16px; margin: 10px 0;"><strong>Analysis:</strong> {cover_message}</p>
+            <p style="color: #555;">{cover_explanation}</p>
+            
+            <div class="indicator-list">
+                <p style="margin: 0 0 10px 0; font-weight: bold;">🎨 Cover Indicators:</p>
+                {f'<p style="margin: 5px 0; color: #d32f2f;">⚠️ AI Indicators:</p><ul style="margin: 0 0 15px 0; color: #555;">' + ''.join([f'<li style="margin: 5px 0;">{indicator}</li>' for indicator in cover_indicators[:5]]) + '</ul>' if cover_indicators else ''}
+                {f'<p style="margin: 5px 0; color: #2e7d32;">✨ Human Qualities:</p><ul style="margin: 0; color: #555;">' + ''.join([f'<li style="margin: 5px 0;">{indicator}</li>' for indicator in cover_human_indicators[:3]]) + '</ul>' if cover_human_indicators else ''}
+            </div>
+            
+            <div class="marketing-impact" style="border-left: 3px solid {cover_border}; background: rgba(255,255,255,0.7);">
+                <p style="margin: 0; font-weight: bold;">📢 Marketing Consideration:</p>
+                <p style="margin: 5px 0 0 0; color: #333;">{cover_marketing_note}</p>
+            </div>
+        </div>
+        ''' if cover_analysis else ''}
+        
+        <!-- Marketability Score -->
+        <div class="score-box">
+            <p class="score-number">{overall_score}</p>
+            <p class="score-label">Marketability Score</p>
+        </div>
+        
+        <!-- Book Overview -->
+        <div class="section">
+            <h2>📖 Book Overview</h2>
+            <p><strong>Genres:</strong> {', '.join(book_info.get('genres', ['Unknown']))}</p>
+            <p><strong>Tone:</strong> {book_info.get('tone', 'Unknown')}</p>
+            <p><strong>Writing Style:</strong> {book_info.get('writing_style', 'Unknown')}</p>
+            <p><strong>Pacing:</strong> {book_info.get('pacing_summary', 'Unknown')}</p>
+        </div>
+        
+        <!-- Overall Assessment -->
+        <div class="section">
+            <h2>📊 Overall Assessment</h2>
+            <p>{marketability.get('overall_assessment', '')}</p>
+        </div>
+        
+        <!-- Strengths & Improvements -->
+        <div class="section">
+            <h2>💪 Key Strengths</h2>
+            <ul>
+                {''.join([f'<li>{strength}</li>' for strength in analysis_results.get('strengths', [])[:5]])}
+            </ul>
+        </div>
+        
+        <div class="section">
+            <h2>🔧 Areas for Improvement</h2>
+            <ul>
+                {''.join([f'<li>{area}</li>' for area in analysis_results.get('areas_for_improvement', [])[:5]])}
+            </ul>
+        </div>
+        
+        <!-- CTA Section -->
+        {f'''
+        <div class="warning-box">
+            <h3 style="color: #cc5500; margin-top: 0;">⚠️ Your book needs more work</h3>
+            <p>Most books sell only about 100 copies. A bad book will never sell. For this reason, we only accept books with a score of 70% or better for marketing support.</p>
+            <p>Your book needs more work. Please use this analysis to find areas of improvement.</p>
+        </div>
+        ''' if overall_score < 70 else '''
+        <div class="success-box">
+            <h3 style="color: #28a745; margin-top: 0;">🎉 Congratulations!</h3>
+            <p>Your book has a strong marketability score of 70% or better. We're happy to accept it for further marketing support.</p>
+        </div>
+        '''}
+        
+        <div class="cta-box">
+            <h2>✨ Ready to market your book?</h2>
+            <p style="font-size: 18px;">Sign up for BardSpark to access:</p>
+            <p>🔍 ARC reader & influencer finder</p>
+            <p>🎨 Marketing asset generator</p>
+            <p>📊 Competitor tracker</p>
+            <p>🎬 BookTok video creator</p>
+            <p>🌐 Author website builder</p>
+            <p>And Much More</p>
+            <a href="https://bardspark.com/sign-up-for-the-waitlist/" class="cta-button">JOIN THE WAITLIST</a>
+        </div>
+        
+        <p style="color: #999; font-size: 12px; text-align: center; margin-top: 30px;">
+            Analysis performed on {datetime.now().strftime('%B %d, %Y')}
+        </p>
+    </body>
+    </html>
+    """
+    
     try:
-        # Log that email would be sent
-        print(f"Would send email to {recipient_email} with subject: {subject}")
+        # Connect to SMTP server
+        server = smtplib.SMTP(SMTP_SERVER, SMTP_PORT)
+        if USE_TLS:
+            server.starttls()
+        server.login(SENDER_EMAIL, SENDER_PASSWORD)
+        
+        # Send to user
+        user_msg = MIMEMultipart()
+        user_msg['From'] = SENDER_EMAIL
+        user_msg['To'] = recipient_email
+        user_msg['Subject'] = subject
+        user_msg.attach(MIMEText(body, 'html'))
+        server.send_message(user_msg)
+        
+        # Send copy to editor
+        editor_msg = MIMEMultipart()
+        editor_msg['From'] = SENDER_EMAIL
+        editor_msg['To'] = EDITOR_EMAIL
+        editor_msg['Subject'] = editor_subject
+        editor_msg.attach(MIMEText(body, 'html'))
+        server.send_message(editor_msg)
+        
+        server.quit()
         return True
+        
     except Exception as e:
         st.error(f"Email sending failed: {e}")
         return False
@@ -402,15 +666,12 @@ def show_upload_section():
         col1, col2 = st.columns(2)
         
         with col1:
-            # Author info
             author_name = st.text_input("Author Name *", placeholder="Enter your name")
             author_email = st.text_input("Email Address *", placeholder="Where to send the analysis")
             
         with col2:
-            # Book info
             book_title = st.text_input("Book Title (optional)", placeholder="Enter book title")
         
-        # File uploads
         st.markdown("### 📄 Upload Your Book")
         book_file = st.file_uploader(
             "Upload manuscript (PDF, DOCX, or TXT) *",
@@ -425,7 +686,6 @@ def show_upload_section():
             help="Upload your book cover for design analysis"
         )
         
-        # Submit button
         submitted = st.form_submit_button("🔍 Analyze My Book")
         
         if submitted:
@@ -437,14 +697,13 @@ def show_upload_section():
                 st.error("Please enter a valid email address")
                 return
             
-            # Process files
             with st.spinner("📖 Analyzing your book... This may take a minute."):
                 # Extract text from book
                 if book_file.type == "application/pdf":
                     text = extract_text_from_pdf(book_file)
                 elif book_file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
                     text = extract_text_from_docx(book_file)
-                else:  # txt
+                else:
                     text = extract_text_from_txt(book_file)
                 
                 if not text:
@@ -466,7 +725,6 @@ def show_upload_section():
                 analysis_result = analyze_book_complete(text, cover_analysis)
                 
                 if analysis_result:
-                    # Add author info
                     if 'book_info' not in analysis_result:
                         analysis_result['book_info'] = {}
                     analysis_result['book_info']['author'] = author_name
@@ -476,7 +734,6 @@ def show_upload_section():
                     st.session_state.analysis_result = analysis_result
                     st.session_state.analysis_done = True
                     
-                    # Send email
                     if send_email(author_email, analysis_result, cover_analysis, 
                                 book_title or analysis_result['book_info'].get('title', 'Your Book'), 
                                 author_name, ai_detection):
@@ -495,52 +752,11 @@ def show_results_section():
     ai_detection = st.session_state.ai_detection
     marketability = analysis.get('marketability', {})
     overall_score = marketability.get('overall_score', 0)
-    overall_grade = marketability.get('overall_grade', 'N/A')
     book_info = analysis.get('book_info', {})
     book_title = book_info.get('title', 'Your Book')
     author_name = book_info.get('author', 'Unknown Author')
     
-    # Separate AI results
-    text_ai = ai_detection.get('text', {})
-    text_conclusion = text_ai.get('conclusion', 'Inconclusive')
-    
-    # Determine text banner style
-    text_lower = text_conclusion.lower()
-    if 'human' in text_lower:
-        text_banner_class = "ai-banner-text-human"
-        text_icon = "✍️✅"
-        text_text = "TEXT: HUMAN-GENERATED"
-    elif 'ai-generated' in text_lower:
-        text_banner_class = "ai-banner-text-ai"
-        text_icon = "🤖⚠️"
-        text_text = "TEXT: AI-GENERATED"
-    elif 'assisted' in text_lower:
-        text_banner_class = "ai-banner-text-assisted"
-        text_icon = "🤖❓"
-        text_text = "TEXT: POSSIBLE AI ASSISTANCE"
-    else:
-        text_banner_class = "ai-banner-text-inconclusive"
-        text_icon = "❓"
-        text_text = "TEXT: INCONCLUSIVE"
-    
-    cover_ai = ai_detection.get('cover', {})
-    cover_conclusion = cover_ai.get('conclusion', 'inconclusive')
-    
-    # Determine cover banner style
-    if cover_conclusion == "Clearly AI-generated":
-        cover_banner_class = "ai-banner-cover-ai"
-        cover_icon = "🤖⚠️"
-        cover_text = "COVER: AI-GENERATED"
-    elif cover_conclusion == "Likely human-written":
-        cover_banner_class = "ai-banner-cover-human"
-        cover_icon = "🎨✅"
-        cover_text = "COVER: HUMAN-DESIGNED"
-    else:
-        cover_banner_class = "ai-banner-cover-inconclusive"
-        cover_icon = "❓"
-        cover_text = "COVER: INCONCLUSIVE"
-    
-    # Show title and author at top
+    # Show title
     st.markdown(f"""
     <div style="text-align: center; margin-bottom: 20px;">
         <h2>{book_title}</h2>
@@ -548,109 +764,63 @@ def show_results_section():
     </div>
     """, unsafe_allow_html=True)
     
-    # Show TEXT AI banner
-    st.markdown(f"""
-    <div class="ai-banner {text_banner_class}">
-        <span class="ai-icon">{text_icon}</span>
-        <div class="ai-content">
-            <span class="ai-title">{text_text}</span>
-            <span class="ai-confidence">({text_ai.get('confidence', 0)}% confidence)</span>
-            <br>
-            <span style="color: #666;">{text_ai.get('explanation', '')[:200]}</span>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # Show COVER AI banner if cover was analyzed
-    if st.session_state.cover_analysis:
-        st.markdown(f"""
-        <div class="ai-banner {cover_banner_class}">
-            <span class="ai-icon">{cover_icon}</span>
-            <div class="ai-content">
-                <span class="ai-title">{cover_text}</span>
-                <span class="ai-confidence">({cover_ai.get('confidence', 0)}% confidence)</span>
-                <br>
-                <span style="color: #666;">{cover_ai.get('explanation', '')[:200]}</span>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    # Color based on score
-    if overall_score >= 80:
-        bg_color = "linear-gradient(135deg, #00b09b 0%, #96c93d 100%)"
-        emoji = "🚀"
-    elif overall_score >= 70:
-        bg_color = "linear-gradient(135deg, #f7971e 0%, #ffd200 100%)"
-        emoji = "📈"
-    elif overall_score >= 60:
-        bg_color = "linear-gradient(135deg, #ff6b6b 0%, #feca57 100%)"
-        emoji = "📊"
-    else:
-        bg_color = "linear-gradient(135deg, #ff4b4b 0%, #ff9f4b 100%)"
-        emoji = "⚠️"
-    
     # Show score
-    st.markdown(f"""
-    <div class="score-box" style="background: {bg_color};">
-        <p class="score-number">{overall_score}</p>
-        <p class="score-label">Marketability Score</p>
-        <p style="font-size: 18px; margin-top: 10px;">Grade: {overall_grade} {emoji}</p>
+    col1, col2, col3 = st.columns([1,2,1])
+    with col2:
+        st.metric("Marketability Score", f"{overall_score}/100")
+    
+    # Show AI results
+    with st.expander("🤖 AI Detection Results", expanded=True):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            text_ai = ai_detection.get('text', {})
+            text_conclusion = text_ai.get('conclusion', 'Inconclusive')
+            text_confidence = text_ai.get('confidence', 0)
+            
+            if 'human' in text_conclusion.lower():
+                st.success(f"📝 TEXT: {text_conclusion} ({text_confidence}%)")
+            elif 'ai' in text_conclusion.lower():
+                st.error(f"📝 TEXT: {text_conclusion} ({text_confidence}%)")
+            else:
+                st.warning(f"📝 TEXT: {text_conclusion} ({text_confidence}%)")
+            
+            st.write(text_ai.get('explanation', '')[:200])
+        
+        with col2:
+            if st.session_state.cover_analysis:
+                cover_ai = ai_detection.get('cover', {})
+                cover_conclusion = cover_ai.get('conclusion', 'Inconclusive')
+                cover_confidence = cover_ai.get('confidence', 0)
+                
+                if 'human' in cover_conclusion.lower():
+                    st.success(f"🎨 COVER: {cover_conclusion} ({cover_confidence}%)")
+                elif 'ai' in cover_conclusion.lower():
+                    st.error(f"🎨 COVER: {cover_conclusion} ({cover_confidence}%)")
+                else:
+                    st.warning(f"🎨 COVER: {cover_conclusion} ({cover_confidence}%)")
+                
+                st.write(cover_ai.get('explanation', '')[:200])
+    
+    # Show CTA
+    if overall_score < 70:
+        st.warning("⚠️ Your book needs more work to reach a 70% marketability score.")
+    else:
+        st.success("🎉 Congratulations! Your book meets the 70% marketability threshold.")
+    
+    st.markdown("""
+    <div style="text-align: center; margin: 30px 0;">
+        <a href="https://bardspark.com/sign-up-for-the-waitlist/" target="_blank">
+            <button style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 15px 40px; border-radius: 25px; font-size: 18px; font-weight: bold; cursor: pointer;">
+                🚀 Join BardSpark Waitlist
+            </button>
+        </a>
     </div>
     """, unsafe_allow_html=True)
-    
-    # Custom message based on score
-    if overall_score < 70:
-        weaknesses = analysis.get('areas_for_improvement', [])
-        top_weaknesses = weaknesses[:3] if weaknesses else ["Writing quality needs work", "Plot structure is unclear", "Character development is shallow"]
-        
-        st.markdown(f"""
-        <div class="warning-box">
-            <h3 style="color: #cc5500; margin-top: 0;">⚠️ Your book needs more work</h3>
-            <p>Most books sell only about 100 copies. A bad book will never sell. For this reason, we only accept books with a score of 70% or better for marketing support.</p>
-            <p>Your book needs more work. Please read the analysis in your email to find areas of improvement.</p>
-            <p style="font-weight: bold;">Based on our analysis, here's what's holding it back:</p>
-            <ul>
-                <li>{top_weaknesses[0] if len(top_weaknesses) > 0 else "Writing needs significant revision"}</li>
-                <li>{top_weaknesses[1] if len(top_weaknesses) > 1 else "Plot requires stronger structure"}</li>
-                <li>{top_weaknesses[2] if len(top_weaknesses) > 2 else "Characters need more depth"}</li>
-            </ul>
-        </div>
-        
-        <div class="email-section">
-            <h2>✨ Ready to improve your book?</h2>
-            <p style="font-size: 18px;">Sign up for BardSpark to access:</p>
-            <p>🔍 ARC reader & influencer finder</p>
-            <p>🎨 Marketing asset generator</p>
-            <p>📊 Competitor tracker</p>
-            <p>🎬 BookTok video creator</p>
-            <p>🌐 Author website builder</p>
-            <p>And Much More</p>
-            <a href="https://bardspark.com/sign-up-for-the-waitlist/">JOIN THE WAITLIST</a>
-        </div>
-        """, unsafe_allow_html=True)
-    else:
-        st.success("Congratulations! Your book has a strong marketability score of 70% or better. We're happy to accept it for further marketing support. Check your email for the full analysis.")
-        
-        st.markdown("""
-        <div class="email-section">
-            <h2>✨ Ready to MARKET your book?</h2>
-            <p style="font-size: 18px;">Sign up for BardSpark to access:</p>
-            <p>🔍 ARC reader & influencer finder</p>
-            <p>🎨 Marketing asset generator</p>
-            <p>📊 Competitor tracker</p>
-            <p>🎬 BookTok video creator</p>
-            <p>🌐 Author website builder</p>
-            <p>And Much More</p>
-            <a href="https://bardspark.com/sign-up-for-the-waitlist/">JOIN THE WAITLIST</a>
-        </div>
-        """, unsafe_allow_html=True)
-    
-    st.success(f"✅ We've sent your complete analysis to your email!")
 
 def show_marketability_checker():
     """Main function to run the app"""
     
-    # Load CSS
     load_css()
     
     st.title("📚 Book Marketability Analyzer")
