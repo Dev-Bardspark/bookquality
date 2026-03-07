@@ -2,13 +2,11 @@
 # Requirements:
 #   pip install openai python-docx pymupdf   # pymupdf = fitz for PDFs
 #
-# Modified to work with Streamlit secrets
+# Modified to work without tkinter in Streamlit Cloud
 
 import json
 import os
 import sys
-import tkinter as tk
-from tkinter import filedialog, messagebox
 from pathlib import Path
 
 try:
@@ -24,17 +22,30 @@ try:
 except ImportError:
     USING_STREAMLIT = False
 
+# Only import tkinter if we're running in standalone mode
+STANDALONE_MODE = False
+if __name__ == "__main__":
+    try:
+        import tkinter as tk
+        from tkinter import filedialog, messagebox
+        STANDALONE_MODE = True
+    except ImportError:
+        print("Warning: tkinter not available. Running in headless mode.")
+        STANDALONE_MODE = False
+
 # ────────────────────────────────────────
-# CONFIG – Will use Streamlit secrets if available, otherwise use hardcoded key
+# CONFIG – Will use Streamlit secrets if available, otherwise from environment
 # ────────────────────────────────────────
 def get_api_key():
-    """Get API key from Streamlit secrets if available, otherwise from hardcoded variable"""
+    """Get API key from Streamlit secrets if available, otherwise from environment"""
     if USING_STREAMLIT and hasattr(st, 'secrets') and "OPENAI_API_KEY" in st.secrets:
         return st.secrets["OPENAI_API_KEY"]
     else:
-        # Fallback to hardcoded key for standalone use
-        # IMPORTANT: Replace this with your key or set environment variable OPENAI_API_KEY
-        return os.environ.get("OPENAI_API_KEY", "YOUR_API_KEY_HERE")
+        # Fallback to environment variable
+        api_key = os.environ.get("OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError("OpenAI API key not found. Please set it in Streamlit secrets or as OPENAI_API_KEY environment variable.")
+        return api_key
 
 # Initialize client only when needed (lazy initialization)
 _client = None
@@ -44,8 +55,6 @@ def get_client():
     global _client
     if _client is None:
         api_key = get_api_key()
-        if api_key == "YOUR_API_KEY_HERE" or not api_key:
-            raise ValueError("OpenAI API key not found. Please set it in Streamlit secrets or as OPENAI_API_KEY environment variable.")
         _client = OpenAI(api_key=api_key)
     return _client
 
@@ -175,8 +184,12 @@ Return **only** valid JSON:
         return error
 
 # ────────────────────────────────────────
-def main():
-    """Standalone mode with GUI"""
+def main_standalone():
+    """Standalone mode with GUI (only runs when script is executed directly)"""
+    if not STANDALONE_MODE:
+        print("This function is only available when running the script directly.")
+        return
+    
     root = tk.Tk()
     root.withdraw()
 
@@ -233,5 +246,6 @@ def main():
         messagebox.showerror("Error", str(e))
         print(f"ERROR: {e}")
 
+# ────────────────────────────────────────
 if __name__ == "__main__":
-    main()
+    main_standalone()
