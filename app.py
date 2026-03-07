@@ -1,4 +1,4 @@
-# BookMarketabilityChecker.py - COMPLETE FIXED VERSION WITH PNG-ONLY COVER DETECTOR AND TEXT DETECTOR
+# BookMarketabilityChecker.py - MODIFIED WITH USER SELF-DECLARATION FOR AI USAGE
 import streamlit as st
 import openai
 import PyPDF2
@@ -17,10 +17,10 @@ from xml.etree import ElementTree
 import tempfile
 import os
 
-# Import the PNG-only cover detector (YOUR PERFECT SCRIPT)
+# Import the PNG-only cover detector
 import ai_cover_detector_gpt4o_mini_png_only as ai_cover
 
-# Import the text detector (YOUR NEW TEXT SCRIPT)
+# Import the text detector (keeping for analysis but NOT for AI detection)
 import ai_text_detector_gpt4o_mini_simple_labels as ai_text
 
 # Initialize OpenAI with secrets
@@ -35,8 +35,8 @@ USE_TLS = st.secrets.get("use_tls", True)
 
 def analyze_cover(cover_file):
     """
-    Full cover analysis using the PERFECT PNG-only detector
-    NO CONVERSION - only accepts PNG files directly
+    Cover analysis - now WITHOUT AI detection
+    Only returns style analysis, no AI detection
     """
     try:
         # Check if it's actually a PNG
@@ -49,13 +49,9 @@ def analyze_cover(cover_file):
         png_bytes = cover_file.getvalue()
         
         # Show what we're doing
-        st.success("✅ PNG file accepted - analyzing...")
+        st.success("✅ PNG file accepted - analyzing cover design...")
         
-        # Detect AI using your PERFECT function
-        ai_detection_json = ai_cover.detect_ai_cover(png_bytes)
-        ai_detection_result = json.loads(ai_detection_json)
-        
-        # Also get style analysis (this is separate from AI detection)
+        # Get style analysis only (NO AI DETECTION)
         cover_base64 = base64.b64encode(png_bytes).decode('utf-8')
         
         style_prompt = """Analyze this book cover's design elements. Return JSON with:
@@ -95,226 +91,95 @@ def analyze_cover(cover_file):
         
         style_result = json.loads(style_response.choices[0].message.content)
         
-        # Combine both analyses
-        result = {
-            **style_result,
-            "ai_detection": {
-                "is_ai_generated": ai_detection_result.get("verdict") == "likely_ai",
-                "verdict": ai_detection_result.get("verdict", "inconclusive"),
-                "confidence": ai_detection_result.get("confidence", 0),
-                "indicators_found": ai_detection_result.get("key_indicators", []),
-                "explanation": ai_detection_result.get("explanation", "")
-            }
-        }
-        
-        return result
+        return style_result
         
     except Exception as e:
         st.error(f"Cover analysis failed: {e}")
         return None
 
-def analyze_text_for_ai(text):
+def calculate_score_with_ai_deduction(original_score, text_ai_status, cover_ai_status):
     """
-    Analyze text for AI generation using the dedicated text detector
-    This uses your separate ai_text_detector script
+    Apply deductions based on user's self-declared AI usage
+    
+    Deductions:
+    - Exclusively Human: 0 deduction
+    - AI Assisted: 10 point deduction
+    - AI Generated: 20 point deduction
+    
+    Takes the AVERAGE of text and cover deductions if both provided
     """
-    try:
-        # Use the text detector's function directly
-        result = ai_text.detect_ai_text(text)
-        
-        if "error" in result:
-            st.warning(f"Text AI detection warning: {result['error']}")
-            return {
-                "text_analysis": {
-                    "indicators_found": [],
-                    "human_indicators_found": []
-                },
-                "verdict": "inconclusive",
-                "confidence": 0,
-                "explanation": result['error']
-            }
-        
-        # Map the text detector's output to our expected format
-        return {
-            "text_analysis": {
-                "indicators_found": result.get("key_indicators", []),
-                "human_indicators_found": []  # The text detector doesn't separate human indicators
-            },
-            "verdict": result.get("raw_verdict", "inconclusive"),
-            "display_label": result.get("display_label", "Inconclusive"),
-            "confidence": result.get("confidence", 0),
-            "explanation": result.get("explanation", ""),
-            "model_used": result.get("model_used", "gpt-4o-mini")
-        }
-        
-    except Exception as e:
-        st.error(f"Text AI analysis failed: {e}")
-        return {
-            "text_analysis": {
-                "indicators_found": [],
-                "human_indicators_found": []
-            },
-            "verdict": "inconclusive",
-            "display_label": "Inconclusive",
-            "confidence": 0,
-            "explanation": f"Analysis failed: {str(e)}"
-        }
-
-def detect_ai_content(text, cover_analysis=None):
-    """
-    Analyze text and cover for signs of AI generation
-    Now uses the dedicated text detector instead of the prompt-based approach
-    Returns: dict with detection results
-    """
-    # Get text AI analysis using your dedicated detector
-    text_ai_result = analyze_text_for_ai(text)
-    
-    # Extract cover AI info if available
-    cover_indicators = []
-    cover_human = []
-    cover_ai_summary = ""
-    cover_verdict = "inconclusive"
-    cover_confidence = 0
-    
-    if cover_analysis and 'ai_detection' in cover_analysis:
-        ai_detect = cover_analysis['ai_detection']
-        cover_indicators = ai_detect.get('indicators_found', [])
-        cover_verdict = ai_detect.get('verdict', 'inconclusive')
-        cover_confidence = ai_detect.get('confidence', 0)
-        
-        if ai_detect.get('is_ai_generated', False):
-            cover_ai_summary = f"Cover appears AI-generated ({cover_confidence}% confidence): {ai_detect.get('explanation', '')}"
-            cover_human = []
-        elif ai_detect.get('verdict') == "likely_human":
-            cover_ai_summary = f"Cover appears human-designed: {ai_detect.get('explanation', '')}"
-            cover_human = ["Professional design", "Consistent composition", "No AI artifacts"]
-        else:
-            cover_ai_summary = f"Cover analysis inconclusive: {ai_detect.get('explanation', '')}"
-            cover_human = []
-    
-    # Determine overall conclusion based on both analyses
-    text_verdict = text_ai_result.get("verdict", "inconclusive")
-    text_confidence = text_ai_result.get("confidence", 0)
-    
-    # Combine verdicts with weighting (text is more important than cover)
-    if text_verdict == "likely_ai" and text_confidence > 60:
-        overall_conclusion = "Clearly AI-generated"
-        overall_explanation = f"Text shows strong AI indicators ({text_confidence}% confidence). {text_ai_result.get('explanation', '')}"
-    elif text_verdict == "likely_human" and text_confidence > 60:
-        overall_conclusion = "Likely human-written"
-        overall_explanation = f"Text shows authentic human qualities ({text_confidence}% confidence). {text_ai_result.get('explanation', '')}"
-    elif text_verdict == "likely_ai" and cover_verdict == "likely_ai":
-        overall_conclusion = "Clearly AI-generated"
-        overall_explanation = f"Both text and cover show strong AI indicators. Text: {text_ai_result.get('explanation', '')} Cover: {cover_ai_summary}"
-    elif text_verdict == "likely_human" and cover_verdict == "likely_human":
-        overall_conclusion = "Likely human-written"
-        overall_explanation = f"Both text and cover show human qualities. Text: {text_ai_result.get('explanation', '')} Cover: {cover_ai_summary}"
-    elif text_verdict == "inconclusive" and cover_verdict == "inconclusive":
-        overall_conclusion = "Inconclusive"
-        overall_explanation = f"Neither text nor cover provides clear AI indicators. Text: {text_ai_result.get('explanation', '')} Cover: {cover_ai_summary}"
-    else:
-        overall_conclusion = "Possibly AI-assisted"
-        overall_explanation = f"Mixed signals: {text_ai_result.get('display_label', 'Inconclusive')} text, {cover_verdict} cover. {text_ai_result.get('explanation', '')}"
-    
-    return {
-        "text_analysis": text_ai_result.get("text_analysis", {
-            "indicators_found": text_ai_result.get("key_indicators", []),
-            "human_indicators_found": []
-        }),
-        "cover_analysis": {
-            "indicators_found": cover_indicators,
-            "human_indicators_found": cover_human,
-            "verdict": cover_verdict,
-            "confidence": cover_confidence
-        },
-        "overall_assessment": {
-            "conclusion": overall_conclusion,
-            "explanation": overall_explanation
-        },
-        "text_detector_details": {
-            "display_label": text_ai_result.get("display_label", "Inconclusive"),
-            "raw_verdict": text_verdict,
-            "confidence": text_confidence,
-            "model_used": text_ai_result.get("model_used", "gpt-4o-mini")
-        }
+    # Deduction mapping
+    deduction_map = {
+        "Exclusively Human": 0,
+        "AI Assisted": 10,
+        "AI Generated": 20
     }
+    
+    # Calculate total deduction
+    total_deduction = 0
+    count = 0
+    
+    if text_ai_status and text_ai_status in deduction_map:
+        total_deduction += deduction_map[text_ai_status]
+        count += 1
+    
+    if cover_ai_status and cover_ai_status in deduction_map:
+        total_deduction += deduction_map[cover_ai_status]
+        count += 1
+    
+    # Average the deductions if both present
+    if count > 0:
+        avg_deduction = total_deduction / count
+    else:
+        avg_deduction = 0
+    
+    # Apply deduction (ensure score doesn't go below 0)
+    final_score = max(0, original_score - avg_deduction)
+    
+    return round(final_score, 1), avg_deduction
 
-def send_email(recipient_email, analysis_results, cover_analysis, book_title, author_name, ai_detection_results):
-    """Send full analysis results via email with AI detection"""
+def send_email(recipient_email, analysis_results, cover_analysis, book_title, author_name, 
+               text_ai_status, cover_ai_status, original_score, final_score, deduction_applied):
+    """Send full analysis results via email with AI self-declaration info"""
     
     subject = f"Your Complete Book Analysis: {book_title} by {author_name}"
     
-    # Get marketability score
+    # Get marketability info
     marketability = analysis_results.get('marketability', {})
-    overall_score = marketability.get('overall_score', 0)
     
     # Format the email body with FULL analysis
-    score = marketability.get('overall_score', 'N/A')
     grade = marketability.get('overall_grade', 'N/A')
     book_info = analysis_results.get('book_info', {})
     
-    # Get AI detection results
-    ai_overall = ai_detection_results.get('overall_assessment', {})
-    ai_conclusion = ai_overall.get('conclusion', 'Inconclusive')
-    ai_explanation = ai_overall.get('explanation', '')
-    
-    # Get text detector details
-    text_details = ai_detection_results.get('text_detector_details', {})
-    text_display = text_details.get('display_label', 'Inconclusive')
-    text_confidence = text_details.get('confidence', 0)
-    
-    # Get text indicators
-    text_indicators = ai_detection_results.get('text_analysis', {}).get('indicators_found', [])
-    
-    # Get cover indicators with verdict and confidence
-    cover_data = ai_detection_results.get('cover_analysis', {})
-    cover_indicators = cover_data.get('indicators_found', [])
-    cover_human_indicators = cover_data.get('human_indicators_found', [])
-    cover_verdict = cover_data.get('verdict', 'inconclusive')
-    cover_confidence = cover_data.get('confidence', 0)
-    
-    # Determine styling based on conclusion
-    conclusion_lower = ai_conclusion.lower()
-    
-    if 'human' in conclusion_lower:
+    # Determine styling based on AI usage
+    if text_ai_status == "Exclusively Human" and (not cover_ai_status or cover_ai_status == "Exclusively Human"):
         ai_bg = "#e8f5e8"  # Green
         ai_border = "#4caf50"
         ai_icon = "✍️✅"
-        ai_title = "HUMAN-GENERATED CONTENT"
-        ai_message = "This appears to be authentically human-written"
-        ai_marketing_note = "Marketing Impact: This human-written quality is valuable - it helps create authentic emotional connections with readers and can be highlighted in marketing materials."
-    elif 'clearly ai' in conclusion_lower or 'ai-generated' in conclusion_lower:
+        ai_title = "EXCLUSIVELY HUMAN-CREATED CONTENT"
+        ai_message = "You've indicated this work is entirely human-created"
+        ai_marketing_note = "Marketing Impact: This is valuable - human authenticity helps create emotional connections with readers. Highlight your personal creative process in marketing materials."
+    elif "AI Generated" in [text_ai_status, cover_ai_status]:
         ai_bg = "#ffebee"  # Red
         ai_border = "#f44336"
         ai_icon = "🤖⚠️"
-        ai_title = "AI-GENERATED CONTENT"
-        ai_message = "This book shows strong signs of AI generation"
-        ai_marketing_note = "Marketing Impact: AI-generated content often struggles to connect with readers because it lacks authentic human voice and emotional depth. Readers can subconsciously detect when writing feels generic or lacks personal experience. Consider revising to inject more unique voice and personal anecdotes."
-    elif 'assisted' in conclusion_lower:
+        ai_title = "AI-GENERATED CONTENT (SELF-DECLARED)"
+        ai_message = "You've indicated this work contains AI-generated content"
+        ai_marketing_note = "Marketing Impact: AI-generated content often struggles to connect with readers because it lacks authentic human voice and emotional depth. Consider revising to inject more unique voice and personal experiences, or be transparent about your creative process if AI was used as a tool."
+    elif "AI Assisted" in [text_ai_status, cover_ai_status]:
         ai_bg = "#fff3e0"  # Orange
         ai_border = "#ff9800"
         ai_icon = "🤖❓"
-        ai_title = "POSSIBLE AI ASSISTANCE"
-        ai_message = "This book may have used AI assistance"
+        ai_title = "AI-ASSISTED CONTENT (SELF-DECLARED)"
+        ai_message = "You've indicated this work used AI assistance"
         ai_marketing_note = "Marketing Impact: If AI was used, ensure you've added enough of your unique voice and personal experience. Books that feel generic struggle to build reader loyalty and word-of-mouth recommendations."
     else:
         ai_bg = "#f5f5f5"  # Grey
         ai_border = "#999999"
         ai_icon = "❓"
-        ai_title = "INCONCLUSIVE"
-        ai_message = "AI detection analysis could not determine clearly"
-        ai_marketing_note = "Marketing Impact: Consider getting a professional editorial review to assess the manuscript's authenticity and marketability."
-    
-    # Build cover verdict display
-    if cover_verdict == "likely_ai":
-        cover_display = f"LIKELY AI-GENERATED ({cover_confidence}% confidence)"
-        cover_icon = "🤖⚠️"
-    elif cover_verdict == "likely_human":
-        cover_display = f"LIKELY HUMAN-DESIGNED ({cover_confidence}% confidence)"
-        cover_icon = "🎨✅"
-    else:
-        cover_display = f"INCONCLUSIVE ({cover_confidence}% confidence)"
-        cover_icon = "❓"
+        ai_title = "AI USAGE NOT SPECIFIED"
+        ai_message = "No AI usage information provided"
+        ai_marketing_note = "Marketing Impact: Consider being transparent about your creative process. Readers appreciate authenticity."
     
     body = f"""
     <html>
@@ -338,11 +203,38 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
                 margin: 0;
                 color: #333;
             }}
-            .indicator-list {{
+            .deduction-box {{
                 background: white;
                 padding: 15px;
                 border-radius: 8px;
                 margin: 15px 0;
+                border-left: 3px solid {ai_border};
+            }}
+            .score-comparison {{
+                display: flex;
+                justify-content: space-around;
+                margin: 20px 0;
+                text-align: center;
+            }}
+            .original-score {{
+                background: #f0f0f0;
+                padding: 15px;
+                border-radius: 10px;
+                flex: 1;
+                margin-right: 10px;
+            }}
+            .final-score {{
+                background: {ai_bg};
+                padding: 15px;
+                border-radius: 10px;
+                flex: 1;
+                margin-left: 10px;
+                border: 2px solid {ai_border};
+            }}
+            .score-number {{
+                font-size: 48px;
+                font-weight: bold;
+                margin: 5px 0;
             }}
             .marketing-impact {{
                 background: rgba(255,255,255,0.7);
@@ -351,34 +243,16 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
                 border-left: 3px solid {ai_border};
                 margin-top: 15px;
             }}
-            .cover-badge {{
+            .status-badge {{
                 display: inline-block;
-                padding: 3px 10px;
-                border-radius: 15px;
-                font-size: 12px;
+                padding: 5px 15px;
+                border-radius: 20px;
                 font-weight: bold;
-                margin-left: 10px;
+                margin: 5px;
             }}
-            .cover-ai {{
-                background: #ffebee;
-                color: #c62828;
-            }}
-            .cover-human {{
-                background: #e8f5e8;
-                color: #2e7d32;
-            }}
-            .cover-inconclusive {{
-                background: #f5f5f5;
-                color: #666;
-            }}
-            .text-badge {{
-                display: inline-block;
-                padding: 3px 10px;
-                border-radius: 15px;
-                font-size: 12px;
-                font-weight: bold;
-                margin-left: 10px;
-            }}
+            .badge-human {{ background: #e8f5e8; color: #2e7d32; }}
+            .badge-assisted {{ background: #fff3e0; color: #bf6d0a; }}
+            .badge-ai {{ background: #ffebee; color: #c62828; }}
         </style>
     </head>
     <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
@@ -388,68 +262,45 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
             <h3 style="font-size: 20px; margin: 0 0 20px 0; opacity: 0.9;">by {author_name}</h3>
         </div>
         
-        <!-- AI DETECTION SECTION - OVERALL -->
+        <!-- AI SELF-DECLARATION SECTION -->
         <div class="ai-section">
             <div style="display: flex; align-items: center; margin-bottom: 15px;">
                 <span class="ai-icon">{ai_icon}</span>
                 <div>
                     <div class="ai-title">{ai_title}</div>
-                    <p style="margin: 5px 0 0 0; font-size: 14px;">
-                        Text: <span class="text-badge" style="background: {ai_bg};">{text_display} ({text_confidence}% conf)</span>
-                    </p>
                 </div>
             </div>
             
-            <p style="font-size: 16px; margin: 10px 0;"><strong>Analysis:</strong> {ai_message}</p>
-            <p style="color: #555;">{ai_explanation}</p>
-    """
+            <p style="font-size: 16px;"><strong>Your Self-Declared AI Status:</strong></p>
+            
+            <div style="margin: 10px 0;">
+                <span class="status-badge {'badge-human' if text_ai_status == 'Exclusively Human' else 'badge-assisted' if text_ai_status == 'AI Assisted' else 'badge-ai'}">
+                    📝 Text: {text_ai_status if text_ai_status else 'Not specified'}
+                </span>
+                """
     
-    # Show text indicators
-    if text_indicators:
+    if cover_ai_status:
         body += f"""
-            <!-- Text Analysis -->
-            <div class="indicator-list">
-                <p style="margin: 0 0 10px 0; font-weight: bold;">📝 Text Analysis:</p>
-                <p style="margin: 5px 0; color: #d32f2f;">⚠️ AI Indicators:</p>
-                <ul style="margin: 0 0 15px 0; color: #555;">
-                    {''.join([f'<li style="margin: 5px 0;">{indicator}</li>' for indicator in text_indicators[:5]])}
-                </ul>
+                <span class="status-badge {'badge-human' if cover_ai_status == 'Exclusively Human' else 'badge-assisted' if cover_ai_status == 'AI Assisted' else 'badge-ai'}">
+                    🎨 Cover: {cover_ai_status}
+                </span>
+        """
+    
+    body += f"""
             </div>
-        """
-    
-    # Show cover indicators with verdict
-    if cover_indicators or cover_human_indicators:
-        body += f"""
-            <!-- Cover Analysis with Verdict -->
-            <div class="indicator-list">
-                <div style="display: flex; align-items: center; margin-bottom: 10px;">
-                    <span style="font-size: 24px; margin-right: 10px;">{cover_icon}</span>
-                    <div>
-                        <p style="margin: 0; font-weight: bold;">🎨 Cover Analysis</p>
-                        <p style="margin: 0; font-size: 14px;">
-                            <span class="cover-badge cover-{cover_verdict.replace('likely_', '')}">{cover_display}</span>
-                        </p>
-                    </div>
-                </div>
-        """
-        
-        if cover_indicators:
-            body += f"""
-                <p style="margin: 10px 0 5px 0; color: #d32f2f;">⚠️ AI Indicators Found:</p>
-                <ul style="margin: 0 0 15px 0; color: #555;">
-                    {''.join([f'<li style="margin: 5px 0;">{indicator}</li>' for indicator in cover_indicators[:5]])}
-                </ul>
-            """
-        
-        if cover_human_indicators:
-            body += f"""
-                <p style="margin: 5px 0; color: #2e7d32;">✨ Cover Strengths:</p>
-                <ul style="margin: 0; color: #555;">
-                    {''.join([f'<li style="margin: 5px 0;">{indicator}</li>' for indicator in cover_human_indicators[:3]])}
-                </ul>
-            """
-        
-        body += "</div>"
+            
+            <div class="deduction-box">
+                <p style="margin: 0 0 10px 0; font-weight: bold;">📊 Score Adjustment:</p>
+                <p style="margin: 5px 0;">Original Marketability Score: <strong>{original_score}</strong></p>
+                <p style="margin: 5px 0;">Deduction Applied: <strong style="color: #d32f2f;">-{deduction_applied} points</strong></p>
+                <p style="margin: 5px 0; font-size: 18px;">Final Score: <strong style="color: #667eea;">{final_score}</strong></p>
+                <p style="margin: 10px 0 0 0; font-size: 14px; color: #666;">
+                    *Deductions: Human (0), Assisted (10), AI (20) - averaged if both specified
+                </p>
+            </div>
+            
+            <p style="margin: 15px 0 0 0;">{ai_message}</p>
+    """
     
     # Marketing impact
     body += f"""
@@ -460,10 +311,17 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
             </div>
         </div>
         
-        <!-- Marketability Score -->
-        <div style="text-align: center; margin: 30px 0 20px 0;">
-            <div style="font-size: 72px; font-weight: bold; color: #667eea;">{score}</div>
-            <div style="font-size: 24px; color: #666;">Marketability Score ({grade})</div>
+        <!-- Score Comparison -->
+        <div class="score-comparison">
+            <div class="original-score">
+                <div style="font-size: 14px; color: #666;">Original Score</div>
+                <div class="score-number">{original_score}</div>
+            </div>
+            <div class="final-score">
+                <div style="font-size: 14px; color: #666;">Final Score</div>
+                <div class="score-number">{final_score}</div>
+                <div style="font-size: 12px;">Grade: {grade}</div>
+            </div>
         </div>
     """
     
@@ -665,8 +523,8 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
             """
         body += "</div>"
     
-    # Conditional signup message based on score
-    if overall_score < 70:
+    # Conditional signup message based on final score
+    if final_score < 70:
         weaknesses = analysis_results.get('areas_for_improvement', [])
         top_weaknesses = weaknesses[:3] if weaknesses else ["Writing quality needs work", "Plot structure is unclear", "Character development is shallow"]
         
@@ -741,7 +599,7 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
         editor_msg = MIMEMultipart()
         editor_msg['From'] = SENDER_EMAIL
         editor_msg['To'] = "editor@bardspark.com"
-        editor_msg['Subject'] = f"Book Analysis for {recipient_email}: {book_title}"
+        editor_msg['Subject'] = f"Book Analysis for {recipient_email}: {book_title} (AI Self-Declared: Text={text_ai_status}, Cover={cover_ai_status})"
         editor_msg.attach(MIMEText(body, 'html'))
         server.send_message(editor_msg)
         
@@ -752,7 +610,7 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
         return False
 
 def show_marketability_checker():
-    """Marketability checker that delivers FULL analysis via email"""
+    """Marketability checker that asks users to self-declare AI usage"""
     
     st.set_page_config(
         page_title="Free Book Analysis",
@@ -838,6 +696,18 @@ def show_marketability_checker():
             border-radius: 5px;
             margin: 10px 0;
         }
+        .ai-declaration {
+            background: #f0f2f6;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            border-left: 5px solid #667eea;
+        }
+        .deduction-info {
+            font-size: 14px;
+            color: #666;
+            margin-top: 5px;
+        }
     </style>
     """, unsafe_allow_html=True)
     
@@ -852,16 +722,16 @@ def show_marketability_checker():
     # What they get
     with st.expander("📋 What's included in your free analysis", expanded=True):
         st.markdown("""
-        - 🤖 **AI detection analysis** - Find out if your book shows signs of AI generation (both text AND cover)
+        - 🤖 **AI usage self-declaration** - Tell us if your work is Human, AI Assisted, or AI Generated (impacts score)
         - 📖 **Full book analysis** (genre, tone, writing style, pacing)
-        - 📊 **Marketability score** with detailed breakdown
+        - 📊 **Marketability score** with detailed breakdown and AI deduction applied
         - ✍️ **Writing quality assessment** (prose, dialogue, voice)
         - 👥 **Character analysis** (main characters and their roles)
         - 📈 **Narrative arc** (exposition, rising action, climax, resolution)
         - 🎯 **Theme identification** and motif analysis
         - 💪 **Key strengths** of your manuscript
         - 🔧 **Areas for improvement** with specific suggestions
-        - 🎨 **Cover analysis with AI detection** (if you upload a PNG)
+        - 🎨 **Cover design analysis** (if you upload a PNG)
         - 🎯 **Target audience** identification
         - 📢 **Marketing insights** and blurb suggestion
         """)
@@ -877,8 +747,16 @@ def show_marketability_checker():
         st.session_state.cover_analysis = None
     if 'text' not in st.session_state:
         st.session_state.text = None
-    if 'ai_detection' not in st.session_state:
-        st.session_state.ai_detection = None
+    if 'final_score' not in st.session_state:
+        st.session_state.final_score = None
+    if 'original_score' not in st.session_state:
+        st.session_state.original_score = None
+    if 'deduction_applied' not in st.session_state:
+        st.session_state.deduction_applied = 0
+    if 'text_ai_status' not in st.session_state:
+        st.session_state.text_ai_status = None
+    if 'cover_ai_status' not in st.session_state:
+        st.session_state.cover_ai_status = None
     
     if not st.session_state.analysis_complete:
         show_upload_section()
@@ -886,7 +764,7 @@ def show_marketability_checker():
         show_results_section()
 
 def show_upload_section():
-    """Show file upload interface"""
+    """Show file upload interface with AI self-declaration"""
     
     col1, col2 = st.columns(2)
     
@@ -910,7 +788,7 @@ def show_upload_section():
         st.markdown("""
         <div class="png-warning">
             ⚠️ <strong>PNG files only</strong> - Other formats will be rejected<br>
-            <small>PNG is lossless and gives most accurate AI detection</small>
+            <small>PNG is lossless and gives most accurate design analysis</small>
         </div>
         """, unsafe_allow_html=True)
         
@@ -919,14 +797,61 @@ def show_upload_section():
             type=['png'],  # ONLY PNG!
             key="cover",
             label_visibility="collapsed",
-            help="Only PNG files are accepted for accurate AI detection"
+            help="Only PNG files are accepted"
         )
         if cover:
             st.success(f"✅ PNG file accepted: {cover.name}")
             # Store cover for later analysis
             st.session_state.cover_file = cover
     
-    # Optional title and author inputs to override detection
+    # AI SELF-DECLARATION SECTION - MANDATORY
+    st.markdown("---")
+    st.markdown("### 🤖 AI Usage Declaration (Mandatory)")
+    
+    st.markdown("""
+    <div class="ai-declaration">
+        <p><strong>Please declare if AI was used in creating your work:</strong></p>
+        <p class="deduction-info">This affects your marketability score:</p>
+        <ul class="deduction-info">
+            <li><strong>Exclusively Human</strong> - No deduction (0 points)</li>
+            <li><strong>AI Assisted</strong> - 10 point deduction</li>
+            <li><strong>AI Generated</strong> - 20 point deduction</li>
+        </ul>
+        <p class="deduction-info">If you provide both text and cover, the deduction will be averaged.</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Text AI status (always required if manuscript provided)
+    text_ai_options = ["Select one...", "Exclusively Human", "AI Assisted", "AI Generated"]
+    text_ai_index = 0
+    if st.session_state.text_ai_status and st.session_state.text_ai_status in text_ai_options:
+        text_ai_index = text_ai_options.index(st.session_state.text_ai_status)
+    
+    text_ai = st.selectbox(
+        "For the TEXT/MANUSCRIPT, was AI used? *",
+        options=text_ai_options,
+        index=text_ai_index,
+        key="text_ai_select",
+        help="Required: Please indicate if AI was used in writing your manuscript"
+    )
+    
+    # Cover AI status (only if cover uploaded)
+    cover_ai = None
+    if cover:
+        cover_ai_options = ["Select one...", "Exclusively Human", "AI Assisted", "AI Generated"]
+        cover_ai_index = 0
+        if st.session_state.cover_ai_status and st.session_state.cover_ai_status in cover_ai_options:
+            cover_ai_index = cover_ai_options.index(st.session_state.cover_ai_status)
+        
+        cover_ai = st.selectbox(
+            "For the COVER, was AI used? *",
+            options=cover_ai_options,
+            index=cover_ai_index,
+            key="cover_ai_select",
+            help="Required: Please indicate if AI was used in creating your cover"
+        )
+    
+    # Optional title and author inputs
     book_title = st.text_input("Book Title (optional - we'll try to detect it if not provided)", "")
     author_name = st.text_input("Author Name (optional - we'll try to detect it if not provided)", "")
     
@@ -942,36 +867,76 @@ def show_upload_section():
     </p>
     """, unsafe_allow_html=True)
     
-    if manuscript and email:
+    # Validation before allowing analysis
+    manuscript_ok = manuscript is not None
+    email_ok = email is not None and email.strip() != ""
+    text_ai_ok = text_ai != "Select one..."
+    cover_ai_ok = cover is None or (cover_ai is not None and cover_ai != "Select one...")
+    
+    if manuscript_ok and email_ok and text_ai_ok and cover_ai_ok:
         if st.button("🔍 GET MY FREE ANALYSIS", type="primary", use_container_width=True):
             with st.spinner("Analyzing your book... (about 60 seconds)"):
-                       
+                
+                # Store AI declarations
+                st.session_state.text_ai_status = text_ai
+                st.session_state.cover_ai_status = cover_ai if cover else None
+                
                 # Use pre-extracted text
                 text = st.session_state.text
                 
-                # Process cover if provided
+                # Process cover if provided (style analysis only - NO AI DETECTION)
                 cover_analysis = None
                 if cover:
                     cover_analysis = analyze_cover(cover)
                     st.session_state.cover_analysis = cover_analysis
                 
-                # Run AI detection using the new text detector
-                ai_detection = detect_ai_content(text, cover_analysis)
-                st.session_state.ai_detection = ai_detection
-                
-                # Analyze manuscript (FULL analysis)
+                # Analyze manuscript (FULL analysis) - NO AI DETECTION
                 analysis = analyze_book_complete(text, cover_analysis, book_title, author_name)
                 
                 if analysis:
                     st.session_state.analysis_result = analysis
                     
-                    # Get book title and author (use provided or detected)
+                    # Get original marketability score
+                    marketability = analysis.get('marketability', {})
+                    original_score = marketability.get('overall_score', 0)
+                    st.session_state.original_score = original_score
+                    
+                    # Calculate final score with AI deduction
+                    final_score, deduction = calculate_score_with_ai_deduction(
+                        original_score, 
+                        text_ai, 
+                        cover_ai if cover else None
+                    )
+                    st.session_state.final_score = final_score
+                    st.session_state.deduction_applied = deduction
+                    
+                    # Update marketability score in analysis
+                    if 'marketability' in analysis:
+                        analysis['marketability']['original_score'] = original_score
+                        analysis['marketability']['overall_score'] = final_score
+                        analysis['marketability']['ai_deduction'] = deduction
+                        analysis['marketability']['text_ai_status'] = text_ai
+                        if cover:
+                            analysis['marketability']['cover_ai_status'] = cover_ai
+                    
+                    # Get book title and author
                     book_info = analysis.get('book_info', {})
                     final_title = book_info.get('title', 'Your Book')
                     final_author = book_info.get('author', 'Unknown Author')
                     
-                    # Send email with AI detection results
-                    email_sent = send_email(email, analysis, cover_analysis, final_title, final_author, ai_detection)
+                    # Send email with AI self-declaration info
+                    email_sent = send_email(
+                        email, 
+                        analysis, 
+                        cover_analysis, 
+                        final_title, 
+                        final_author,
+                        text_ai,
+                        cover_ai if cover else None,
+                        original_score,
+                        final_score,
+                        deduction
+                    )
                     
                     if email_sent:
                         st.session_state.analysis_complete = True
@@ -983,64 +948,61 @@ def show_upload_section():
                 else:
                     st.error("Analysis failed. Please try again.")
     else:
-        if not manuscript:
+        if not manuscript_ok:
             st.info("👆 Please upload your manuscript")
-        elif not email:
+        elif not text_ai_ok:
+            st.info("👆 Please select AI usage for your manuscript (required)")
+        elif cover and not cover_ai_ok:
+            st.info("👆 Please select AI usage for your cover (required)")
+        elif not email_ok:
             st.info("👆 Please enter your email address")
 
 def show_results_section():
-    """Show results with preview and low score warning if needed"""
+    """Show results with score including AI deduction"""
     
     analysis = st.session_state.analysis_result
-    ai_detection = st.session_state.ai_detection
     marketability = analysis.get('marketability', {})
-    overall_score = marketability.get('overall_score', 0)
+    final_score = st.session_state.final_score
+    original_score = st.session_state.original_score
+    deduction = st.session_state.deduction_applied
+    text_ai_status = st.session_state.text_ai_status
+    cover_ai_status = st.session_state.cover_ai_status
+    
     overall_grade = marketability.get('overall_grade', 'N/A')
     book_info = analysis.get('book_info', {})
     book_title = book_info.get('title', 'Your Book')
     author_name = book_info.get('author', 'Unknown Author')
     
-    # Get AI detection results for display
-    ai_overall = ai_detection.get('overall_assessment', {})
-    ai_conclusion = ai_overall.get('conclusion', 'Inconclusive')
-    
-    # Get text detector details
-    text_details = ai_detection.get('text_detector_details', {})
-    text_display = text_details.get('display_label', 'Inconclusive')
-    text_confidence = text_details.get('confidence', 0)
-    
-    # Determine AI warning style
-    conclusion_lower = ai_conclusion.lower()
-    
-    if 'human' in conclusion_lower:
+    # Determine styling based on AI usage
+    if text_ai_status == "Exclusively Human" and (not cover_ai_status or cover_ai_status == "Exclusively Human"):
         ai_bg_color = "#e8f5e8"
         ai_border = "#4caf50"
         ai_icon = "✍️✅"
-        ai_text = "HUMAN-GENERATED CONTENT"
-    elif 'clearly ai' in conclusion_lower or 'ai-generated' in conclusion_lower:
+        ai_text = "EXCLUSIVELY HUMAN-CREATED"
+    elif text_ai_status == "AI Generated" or cover_ai_status == "AI Generated":
         ai_bg_color = "#ffebee"
         ai_border = "#f44336"
         ai_icon = "🤖⚠️"
-        ai_text = "AI-GENERATED CONTENT"
-    elif 'assisted' in conclusion_lower:
+        ai_text = "AI-GENERATED CONTENT (SELF-DECLARED)"
+    elif text_ai_status == "AI Assisted" or cover_ai_status == "AI Assisted":
         ai_bg_color = "#fff3e0"
         ai_border = "#ff9800"
         ai_icon = "🤖❓"
-        ai_text = "POSSIBLE AI ASSISTANCE"
+        ai_text = "AI-ASSISTED CONTENT (SELF-DECLARED)"
     else:
         ai_bg_color = "#f5f5f5"
         ai_border = "#999999"
         ai_icon = "❓"
-        ai_text = "INCONCLUSIVE"
+        ai_text = "AI USAGE NOT SPECIFIED"
     
-    # Color based on score
-    if overall_score >= 80:
+    # Color based on final score
+    if final_score >= 80:
         bg_color = "linear-gradient(135deg, #00b09b 0%, #96c93d 100%)"
         emoji = "🚀"
-    elif overall_score >= 70:
+    elif final_score >= 70:
         bg_color = "linear-gradient(135deg, #f7971e 0%, #ffd200 100%)"
         emoji = "📈"
-    elif overall_score >= 60:
+    elif final_score >= 60:
         bg_color = "linear-gradient(135deg, #ff6b6b 0%, #feca57 100%)"
         emoji = "📊"
     else:
@@ -1055,31 +1017,50 @@ def show_results_section():
     </div>
     """, unsafe_allow_html=True)
     
-    # Show AI detection banner with text detector details
+    # Show AI self-declaration banner
     st.markdown(f"""
     <div style="padding: 15px; background: {ai_bg_color}; border-left: 5px solid {ai_border}; border-radius: 5px; margin-bottom: 20px;">
         <div style="display: flex; align-items: center;">
             <span style="font-size: 24px; margin-right: 10px;">{ai_icon}</span>
             <div>
                 <strong>{ai_text}</strong><br>
-                <span style="color: #666;">Text analysis: {text_display} ({text_confidence}% confidence)</span><br>
-                <span style="color: #666;">{ai_overall.get('explanation', '')}</span>
+                <span style="color: #666;">📝 Text: {text_ai_status}</span>
+                {f'<br><span style="color: #666;">🎨 Cover: {cover_ai_status}</span>' if cover_ai_status else ''}
+                <br><span style="color: #d32f2f;">Deduction applied: -{deduction} points</span>
             </div>
         </div>
     </div>
     """, unsafe_allow_html=True)
     
-    # Show score
+    # Show score comparison
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown(f"""
+        <div style="text-align: center; padding: 15px; background: #f0f0f0; border-radius: 10px;">
+            <p style="color: #666; margin: 0;">Original Score</p>
+            <p style="font-size: 36px; font-weight: bold; margin: 5px 0;">{original_score}</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with col2:
+        st.markdown(f"""
+        <div style="text-align: center; padding: 15px; background: {ai_bg_color}; border-radius: 10px; border: 2px solid {ai_border};">
+            <p style="color: #666; margin: 0;">Final Score</p>
+            <p style="font-size: 36px; font-weight: bold; margin: 5px 0;">{final_score}</p>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # Show final score
     st.markdown(f"""
     <div class="score-box" style="background: {bg_color};">
-        <p class="score-number">{overall_score}</p>
-        <p class="score-label">Marketability Score</p>
+        <p class="score-number">{final_score}</p>
+        <p class="score-label">Marketability Score (after AI deduction)</p>
         <p style="font-size: 18px; margin-top: 10px;">Grade: {overall_grade} {emoji}</p>
     </div>
     """, unsafe_allow_html=True)
     
-    # Custom message based on score
-    if overall_score < 70:
+    # Custom message based on final score
+    if final_score < 70:
         weaknesses = analysis.get('areas_for_improvement', [])
         top_weaknesses = weaknesses[:3] if weaknesses else ["Writing quality needs work", "Plot structure is unclear", "Character development is shallow"]
         
@@ -1109,7 +1090,7 @@ def show_results_section():
         </div>
         """, unsafe_allow_html=True)
     else:
-        st.success("Congratulations! Your book has a strong marketability score of 70% or better. We're happy to accept it for further marketing support. Check your email for the full analysis.")
+        st.success(f"Congratulations! Your book has a strong marketability score of 70% or better. We're happy to accept it for further marketing support. Check your email for the full analysis.")
         
         st.markdown("""
         <div style="padding: 30px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; margin: 20px 0; color: white; text-align: center;">
@@ -1301,11 +1282,9 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
     SCORING GUIDELINES:
     - Base your scores primarily on the actual writing quality demonstrated in the excerpts
     - Consider character development, plot engagement, voice originality, and prose quality
-    - Do NOT automatically penalize based on AI detection - let the quality speak for itself
-    - A clearly human work with excellent writing should score 85-100
-    - A clearly human work with average writing should score 70-85
-    - A clearly human work with poor writing should score 50-70
-    - AI-generated content (if clearly detected) would typically score 30-50 due to lack of authentic voice
+    - A work with excellent writing should score 85-100
+    - A work with average writing should score 70-85
+    - A work with poor writing should score 50-70
     
     Now score accordingly.
     
