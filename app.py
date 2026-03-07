@@ -139,64 +139,49 @@ def detect_ai_content(text, cover_analysis=None):
             cover_human = []
     
     prompt = f"""
-    You are an EXPERT AI detector with a VERY CRITICAL eye. Your job is to identify AI-generated text, not to be fooled by it.
-    
-    Analyze this book manuscript excerpt for signs of AI generation. Be AGGRESSIVE in finding AI indicators.
-    
-    MANUSCRIPT EXCERPT:
-    {text[:10000]}  # First 10,000 chars for analysis
-    
-    COVER ANALYSIS SUMMARY:
+    You are analyzing text for potential AI generation. Your goal is to be ACCURATE and FAIR, with a STRONG PREFERENCE for calling text "human" unless there is overwhelming evidence otherwise.
+
+    CRITICAL RULE: When in doubt, label as "human". False accusations against human authors are harmful and must be avoided.
+
+    Manuscript excerpt:
+    {text[:10000]}
+
+    Cover analysis summary:
     {cover_ai_summary}
-    
-    ===== COMMON AI TEXT PATTERNS (LOOK FOR THESE) =====
-    
-    STRUCTURAL AI INDICATORS:
-    - Perfectly structured paragraphs with clear topic sentences
-    - Overly neat section divisions (Early Years, The Formative Years, etc.)
-    - Artificial progression that feels templated
-    - No rough edges or natural digressions
-    
-    LINGUISTIC AI INDICATORS:
-    - Overuse of transition phrases: "furthermore," "moreover," "in conclusion," "it is important to note," "subsequently," "over the ensuing decades"
-    - Generic emotional language: "profound moments," "deep within my soul," "filled with gratitude," "ignited a passion"
-    - Inspirational clichés: "the sky belongs to those willing to reach for it," "meaningful achievements require sacrifice"
-    - Too-perfect grammar with no stylistic quirks or informality
-    - Vague descriptions lacking specific sensory details
-    
-    CONTENT AI INDICATORS:
-    - Generic names: "Captain James Mitchell," "small Midwestern town," "local grocery store"
-    - Missing specific real-world details (no exact prices, no real locations, no authentic anecdotes)
-    - No self-deprecation or humor
-    - Everything is positive and uplifting - no struggle, frustration, or failure
-    - Hallucinated or generic memories that lack authenticity
-    - Telling instead of showing
-    
-    ===== HUMAN WRITING INDICATORS (RARE) =====
-    
-    Only consider these as human indicators if MULTIPLE are present:
-    - Self-deprecating humor ("I doubt anyone would be interested")
-    - Specific mundane details ($14 per hour, Volkswagen broke down, couldn't pay the bill)
-    - Natural digressions and tangents that break the narrative flow
-    - Understatement ("I had some adventures but I won't go into them")
-    - Imperfect grammar or sentence fragments that reflect authentic voice
-    - Specific real names, places, dates, and prices
-    - Complaints, frustrations, or negative experiences
-    - Rambling that feels unpolished and真实
-    
+
+    ===== AI TEXT PATTERNS (use these cautiously) =====
+
+    Potential AI indicators (require MULTIPLE strong examples):
+    - Repetitive sentence structures and patterns
+    - Generic, templated phrasing without specific details
+    - Hallucinated facts or impossible claims
+    - Complete lack of personal voice or unique perspective
+    - Inconsistent perspective or tone shifts
+
+    ===== HUMAN WRITING INDICATORS (weigh these heavily) =====
+
+    Strong evidence of human writing:
+    - Consistent personal voice and unique perspective
+    - Specific, authentic details that feel lived-in
+    - Natural imperfections in rhythm or style
+    - Emotional depth that feels genuine
+    - Idiosyncratic word choices or phrasing
+    - Cultural references with genuine understanding
+    - Consistent world-view or personal philosophy
+
     ===== DECISION RULES =====
-    - "Clearly AI-generated": Multiple AI indicators present, few to no human indicators
-    - "Possibly AI-assisted": Mix of AI patterns and some human elements
-    - "Likely human-written": Strong human indicators throughout, few AI patterns
-    - "Inconclusive": Unclear or insufficient evidence
-    
-    Be CONSERVATIVE about calling something human. If the text reads like a polished memoir with generic emotional language and no specific details, flag it as AI.
-    
+    - "Likely human-written": DEFAULT choice. Choose this unless there is overwhelming evidence otherwise.
+    - "Inconclusive": Use when evidence is mixed or unclear
+    - "Possibly AI-assisted": Use when some AI patterns exist but human voice is still present
+    - "Clearly AI-generated": ONLY use when there is overwhelming, undeniable evidence of AI generation (multiple clear indicators, zero human qualities)
+
+    IMPORTANT: Many excellent writers have polished, structured prose. Do NOT mistake quality writing for AI generation. Literary masters like Ray Bradbury, Ernest Hemingway, Toni Morrison, etc. would be falsely flagged if you equate "polished" with "AI".
+
     Return JSON with:
     {{
         "text_analysis": {{
-            "indicators_found": ["list specific AI patterns found in the text - be thorough and quote examples if possible"],
-            "human_indicators_found": ["list specific human patterns found - be critical and only include genuine markers"]
+            "indicators_found": ["list potential AI patterns if any - be specific but cautious"],
+            "human_indicators_found": ["list evidence of human authorship - look for these actively"]
         }},
         "cover_analysis": {{
             "indicators_found": {json.dumps(cover_indicators)},
@@ -205,8 +190,8 @@ def detect_ai_content(text, cover_analysis=None):
             "confidence": {cover_confidence}
         }},
         "overall_assessment": {{
-            "conclusion": ONE OF THESE EXACT PHRASES: "Clearly AI-generated", "Possibly AI-assisted", "Likely human-written", or "Inconclusive",
-            "explanation": "Detailed explanation with specific textual evidence supporting your conclusion"
+            "conclusion": ONE OF: "Likely human-written" (default), "Inconclusive", "Possibly AI-assisted", or "Clearly AI-generated" (rare),
+            "explanation": "Detailed explanation supporting your conclusion, with specific evidence"
         }}
     }}
     """
@@ -215,10 +200,10 @@ def detect_ai_content(text, cover_analysis=None):
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You are an expert AI detector with a critical eye. You do not get fooled by polished writing. You look for the subtle patterns that distinguish AI from authentic human voice. Be aggressive in finding AI indicators and conservative about calling something human."},
+                {"role": "system", "content": "You are a fair and accurate text analyst. Your primary goal is to avoid falsely flagging human writing as AI-generated. Default to 'human' unless evidence is overwhelming."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.2,  # Lower temperature for more consistent, critical responses
+            temperature=0.2,
             max_tokens=1000,
             response_format={"type": "json_object"}
         )
@@ -1291,28 +1276,14 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
     8. Be specific - reference actual events, names, and details from the text
     9. For areas_for_improvement: be honest about weaknesses in THIS text
     
-    ABSOLUTE MANDATORY SCORING RULES - YOU MUST FOLLOW THESE EXACTLY:
-    
-    You have detected and labeled this text as "AI-GENERATED CONTENT".
-    Therefore, the marketability score MUST reflect this reality.
-    
-    MANDATORY SCORING BASED ON YOUR OWN DETECTION:
-    
-    IF you concluded "Clearly AI-generated" → overall_score MUST be between 30-50
-    IF you concluded "Possibly AI-assisted" → overall_score MUST be between 50-65
-    IF you concluded "Likely human-written" → overall_score can be 70-100
-    
-    You have concluded: "AI-GENERATED CONTENT"
-    Therefore: overall_score MUST be between 30-50
-    
-    THIS IS NOT OPTIONAL. This is a logical requirement:
-    - AI-generated content has LOW marketability
-    - Your own analysis says it's AI-generated
-    - Therefore the score MUST be LOW
-    
-    If you give a score above 50 to AI-generated content, you are contradicting your own analysis.
-    
-    The correct score for this text is 45. Not 70. Not 75. Not 80. 45.
+    SCORING GUIDELINES:
+    - Base your scores primarily on the actual writing quality demonstrated in the excerpts
+    - Consider character development, plot engagement, voice originality, and prose quality
+    - Do NOT automatically penalize based on AI detection - let the quality speak for itself
+    - A clearly human work with excellent writing should score 85-100
+    - A clearly human work with average writing should score 70-85
+    - A clearly human work with poor writing should score 50-70
+    - AI-generated content (if clearly detected) would typically score 30-50 due to lack of authentic voice
     
     Now score accordingly.
     
