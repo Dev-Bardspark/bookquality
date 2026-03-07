@@ -380,6 +380,21 @@ def analyze_book_complete(text, cover_analysis=None):
         st.error(f"Book analysis failed: {e}")
         return None
 
+def send_email(recipient_email, analysis_results, cover_analysis, book_title, author_name, ai_detection_results):
+    """Send full analysis results via email"""
+    
+    subject = f"Your Complete Book Analysis: {book_title} by {author_name}"
+    
+    # For now, just return True to indicate success
+    # In production, you'd implement actual email sending
+    try:
+        # Log that email would be sent
+        print(f"Would send email to {recipient_email} with subject: {subject}")
+        return True
+    except Exception as e:
+        st.error(f"Email sending failed: {e}")
+        return False
+
 def show_upload_section():
     """Display the upload section for book files"""
     
@@ -631,20 +646,6 @@ def show_results_section():
         """, unsafe_allow_html=True)
     
     st.success(f"✅ We've sent your complete analysis to your email!")
-
-def send_email(recipient_email, analysis_results, cover_analysis, book_title, author_name, ai_detection_results):
-    """Send full analysis results via email"""
-    
-    subject = f"Your Complete Book Analysis: {book_title} by {author_name}"
-    
-    # Simplified email sending for now
-    try:
-        # For now, just return True to indicate success
-        # In production, you'd implement actual email sending
-        return True
-    except Exception as e:
-        st.error(f"Email sending failed: {e}")
-        return False
 
 def show_marketability_checker():
     """Main function to run the app"""
