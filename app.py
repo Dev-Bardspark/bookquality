@@ -1,4 +1,4 @@
-# BookMarketabilityChecker.py - COMPLETE FIXED VERSION WITH PNG-ONLY COVER DETECTOR
+# BookMarketabilityChecker.py - COMPLETE FIXED VERSION WITH PNG-ONLY COVER DETECTOR AND TEXT DETECTOR
 import streamlit as st
 import openai
 import PyPDF2
@@ -19,6 +19,9 @@ import os
 
 # Import the PNG-only cover detector (YOUR PERFECT SCRIPT)
 import ai_cover_detector_gpt4o_mini_png_only as ai_cover
+
+# Import the text detector (YOUR NEW TEXT SCRIPT)
+import ai_text_detector_gpt4o_mini_simple_labels as ai_text
 
 # Initialize OpenAI with secrets
 client = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
@@ -110,11 +113,62 @@ def analyze_cover(cover_file):
         st.error(f"Cover analysis failed: {e}")
         return None
 
+def analyze_text_for_ai(text):
+    """
+    Analyze text for AI generation using the dedicated text detector
+    This uses your separate ai_text_detector script
+    """
+    try:
+        # Use the text detector's function directly
+        result = ai_text.detect_ai_text(text)
+        
+        if "error" in result:
+            st.warning(f"Text AI detection warning: {result['error']}")
+            return {
+                "text_analysis": {
+                    "indicators_found": [],
+                    "human_indicators_found": []
+                },
+                "verdict": "inconclusive",
+                "confidence": 0,
+                "explanation": result['error']
+            }
+        
+        # Map the text detector's output to our expected format
+        return {
+            "text_analysis": {
+                "indicators_found": result.get("key_indicators", []),
+                "human_indicators_found": []  # The text detector doesn't separate human indicators
+            },
+            "verdict": result.get("raw_verdict", "inconclusive"),
+            "display_label": result.get("display_label", "Inconclusive"),
+            "confidence": result.get("confidence", 0),
+            "explanation": result.get("explanation", ""),
+            "model_used": result.get("model_used", "gpt-4o-mini")
+        }
+        
+    except Exception as e:
+        st.error(f"Text AI analysis failed: {e}")
+        return {
+            "text_analysis": {
+                "indicators_found": [],
+                "human_indicators_found": []
+            },
+            "verdict": "inconclusive",
+            "display_label": "Inconclusive",
+            "confidence": 0,
+            "explanation": f"Analysis failed: {str(e)}"
+        }
+
 def detect_ai_content(text, cover_analysis=None):
     """
     Analyze text and cover for signs of AI generation
+    Now uses the dedicated text detector instead of the prompt-based approach
     Returns: dict with detection results
     """
+    # Get text AI analysis using your dedicated detector
+    text_ai_result = analyze_text_for_ai(text)
+    
     # Extract cover AI info if available
     cover_indicators = []
     cover_human = []
@@ -138,107 +192,52 @@ def detect_ai_content(text, cover_analysis=None):
             cover_ai_summary = f"Cover analysis inconclusive: {ai_detect.get('explanation', '')}"
             cover_human = []
     
-    prompt = f"""
-    You are an EXPERT AI detector with a VERY CRITICAL eye. Your job is to identify AI-generated text, not to be fooled by it.
+    # Determine overall conclusion based on both analyses
+    text_verdict = text_ai_result.get("verdict", "inconclusive")
+    text_confidence = text_ai_result.get("confidence", 0)
     
-    Analyze this book manuscript excerpt for signs of AI generation. Be AGGRESSIVE in finding AI indicators.
+    # Combine verdicts with weighting (text is more important than cover)
+    if text_verdict == "likely_ai" and text_confidence > 60:
+        overall_conclusion = "Clearly AI-generated"
+        overall_explanation = f"Text shows strong AI indicators ({text_confidence}% confidence). {text_ai_result.get('explanation', '')}"
+    elif text_verdict == "likely_human" and text_confidence > 60:
+        overall_conclusion = "Likely human-written"
+        overall_explanation = f"Text shows authentic human qualities ({text_confidence}% confidence). {text_ai_result.get('explanation', '')}"
+    elif text_verdict == "likely_ai" and cover_verdict == "likely_ai":
+        overall_conclusion = "Clearly AI-generated"
+        overall_explanation = f"Both text and cover show strong AI indicators. Text: {text_ai_result.get('explanation', '')} Cover: {cover_ai_summary}"
+    elif text_verdict == "likely_human" and cover_verdict == "likely_human":
+        overall_conclusion = "Likely human-written"
+        overall_explanation = f"Both text and cover show human qualities. Text: {text_ai_result.get('explanation', '')} Cover: {cover_ai_summary}"
+    elif text_verdict == "inconclusive" and cover_verdict == "inconclusive":
+        overall_conclusion = "Inconclusive"
+        overall_explanation = f"Neither text nor cover provides clear AI indicators. Text: {text_ai_result.get('explanation', '')} Cover: {cover_ai_summary}"
+    else:
+        overall_conclusion = "Possibly AI-assisted"
+        overall_explanation = f"Mixed signals: {text_ai_result.get('display_label', 'Inconclusive')} text, {cover_verdict} cover. {text_ai_result.get('explanation', '')}"
     
-    MANUSCRIPT EXCERPT:
-    {text[:10000]}  # First 10,000 chars for analysis
-    
-    COVER ANALYSIS SUMMARY:
-    {cover_ai_summary}
-    
-    ===== COMMON AI TEXT PATTERNS (LOOK FOR THESE) =====
-    
-    STRUCTURAL AI INDICATORS:
-    - Perfectly structured paragraphs with clear topic sentences
-    - Overly neat section divisions (Early Years, The Formative Years, etc.)
-    - Artificial progression that feels templated
-    - No rough edges or natural digressions
-    
-    LINGUISTIC AI INDICATORS:
-    - Overuse of transition phrases: "furthermore," "moreover," "in conclusion," "it is important to note," "subsequently," "over the ensuing decades"
-    - Generic emotional language: "profound moments," "deep within my soul," "filled with gratitude," "ignited a passion"
-    - Inspirational clichés: "the sky belongs to those willing to reach for it," "meaningful achievements require sacrifice"
-    - Too-perfect grammar with no stylistic quirks or informality
-    - Vague descriptions lacking specific sensory details
-    
-    CONTENT AI INDICATORS:
-    - Generic names: "Captain James Mitchell," "small Midwestern town," "local grocery store"
-    - Missing specific real-world details (no exact prices, no real locations, no authentic anecdotes)
-    - No self-deprecation or humor
-    - Everything is positive and uplifting - no struggle, frustration, or failure
-    - Hallucinated or generic memories that lack authenticity
-    - Telling instead of showing
-    
-    ===== HUMAN WRITING INDICATORS (RARE) =====
-    
-    Only consider these as human indicators if MULTIPLE are present:
-    - Self-deprecating humor ("I doubt anyone would be interested")
-    - Specific mundane details ($14 per hour, Volkswagen broke down, couldn't pay the bill)
-    - Natural digressions and tangents that break the narrative flow
-    - Understatement ("I had some adventures but I won't go into them")
-    - Imperfect grammar or sentence fragments that reflect authentic voice
-    - Specific real names, places, dates, and prices
-    - Complaints, frustrations, or negative experiences
-    - Rambling that feels unpolished and真实
-    
-    ===== DECISION RULES =====
-    - "Clearly AI-generated": Multiple AI indicators present, few to no human indicators
-    - "Possibly AI-assisted": Mix of AI patterns and some human elements
-    - "Likely human-written": Strong human indicators throughout, few AI patterns
-    - "Inconclusive": Unclear or insufficient evidence
-    
-    Be CONSERVATIVE about calling something human. If the text reads like a polished memoir with generic emotional language and no specific details, flag it as AI.
-    
-    Return JSON with:
-    {{
-        "text_analysis": {{
-            "indicators_found": ["list specific AI patterns found in the text - be thorough and quote examples if possible"],
-            "human_indicators_found": ["list specific human patterns found - be critical and only include genuine markers"]
-        }},
-        "cover_analysis": {{
-            "indicators_found": {json.dumps(cover_indicators)},
-            "human_indicators_found": {json.dumps(cover_human)},
-            "verdict": "{cover_verdict}",
-            "confidence": {cover_confidence}
-        }},
-        "overall_assessment": {{
-            "conclusion": ONE OF THESE EXACT PHRASES: "Clearly AI-generated", "Possibly AI-assisted", "Likely human-written", or "Inconclusive",
-            "explanation": "Detailed explanation with specific textual evidence supporting your conclusion"
-        }}
-    }}
-    """
-    
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "You are an expert AI detector with a critical eye. You do not get fooled by polished writing. You look for the subtle patterns that distinguish AI from authentic human voice. Be aggressive in finding AI indicators and conservative about calling something human."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.2,  # Lower temperature for more consistent, critical responses
-            max_tokens=1000,
-            response_format={"type": "json_object"}
-        )
-        
-        return json.loads(response.choices[0].message.content)
-    except Exception as e:
-        st.error(f"AI detection failed: {e}")
-        return {
-            "text_analysis": {"indicators_found": [], "human_indicators_found": []},
-            "cover_analysis": {
-                "indicators_found": cover_indicators, 
-                "human_indicators_found": cover_human,
-                "verdict": cover_verdict,
-                "confidence": cover_confidence
-            },
-            "overall_assessment": {
-                "conclusion": "Inconclusive",
-                "explanation": "AI detection could not be completed"
-            }
+    return {
+        "text_analysis": text_ai_result.get("text_analysis", {
+            "indicators_found": text_ai_result.get("key_indicators", []),
+            "human_indicators_found": []
+        }),
+        "cover_analysis": {
+            "indicators_found": cover_indicators,
+            "human_indicators_found": cover_human,
+            "verdict": cover_verdict,
+            "confidence": cover_confidence
+        },
+        "overall_assessment": {
+            "conclusion": overall_conclusion,
+            "explanation": overall_explanation
+        },
+        "text_detector_details": {
+            "display_label": text_ai_result.get("display_label", "Inconclusive"),
+            "raw_verdict": text_verdict,
+            "confidence": text_confidence,
+            "model_used": text_ai_result.get("model_used", "gpt-4o-mini")
         }
+    }
 
 def send_email(recipient_email, analysis_results, cover_analysis, book_title, author_name, ai_detection_results):
     """Send full analysis results via email with AI detection"""
@@ -259,9 +258,13 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
     ai_conclusion = ai_overall.get('conclusion', 'Inconclusive')
     ai_explanation = ai_overall.get('explanation', '')
     
+    # Get text detector details
+    text_details = ai_detection_results.get('text_detector_details', {})
+    text_display = text_details.get('display_label', 'Inconclusive')
+    text_confidence = text_details.get('confidence', 0)
+    
     # Get text indicators
     text_indicators = ai_detection_results.get('text_analysis', {}).get('indicators_found', [])
-    text_human_indicators = ai_detection_results.get('text_analysis', {}).get('human_indicators_found', [])
     
     # Get cover indicators with verdict and confidence
     cover_data = ai_detection_results.get('cover_analysis', {})
@@ -368,6 +371,14 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
                 background: #f5f5f5;
                 color: #666;
             }}
+            .text-badge {{
+                display: inline-block;
+                padding: 3px 10px;
+                border-radius: 15px;
+                font-size: 12px;
+                font-weight: bold;
+                margin-left: 10px;
+            }}
         </style>
     </head>
     <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
@@ -383,6 +394,9 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
                 <span class="ai-icon">{ai_icon}</span>
                 <div>
                     <div class="ai-title">{ai_title}</div>
+                    <p style="margin: 5px 0 0 0; font-size: 14px;">
+                        Text: <span class="text-badge" style="background: {ai_bg};">{text_display} ({text_confidence}% conf)</span>
+                    </p>
                 </div>
             </div>
             
@@ -391,30 +405,17 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
     """
     
     # Show text indicators
-    if text_indicators or text_human_indicators:
+    if text_indicators:
         body += f"""
             <!-- Text Analysis -->
             <div class="indicator-list">
                 <p style="margin: 0 0 10px 0; font-weight: bold;">📝 Text Analysis:</p>
-        """
-        
-        if text_indicators:
-            body += f"""
                 <p style="margin: 5px 0; color: #d32f2f;">⚠️ AI Indicators:</p>
                 <ul style="margin: 0 0 15px 0; color: #555;">
                     {''.join([f'<li style="margin: 5px 0;">{indicator}</li>' for indicator in text_indicators[:5]])}
                 </ul>
-            """
-        
-        if text_human_indicators:
-            body += f"""
-                <p style="margin: 5px 0; color: #2e7d32;">✨ Human Qualities:</p>
-                <ul style="margin: 0; color: #555;">
-                    {''.join([f'<li style="margin: 5px 0;">{indicator}</li>' for indicator in text_human_indicators[:3]])}
-                </ul>
-            """
-        
-        body += "</div>"
+            </div>
+        """
     
     # Show cover indicators with verdict
     if cover_indicators or cover_human_indicators:
@@ -954,7 +955,7 @@ def show_upload_section():
                     cover_analysis = analyze_cover(cover)
                     st.session_state.cover_analysis = cover_analysis
                 
-                # Run AI detection first
+                # Run AI detection using the new text detector
                 ai_detection = detect_ai_content(text, cover_analysis)
                 st.session_state.ai_detection = ai_detection
                 
@@ -1003,6 +1004,11 @@ def show_results_section():
     ai_overall = ai_detection.get('overall_assessment', {})
     ai_conclusion = ai_overall.get('conclusion', 'Inconclusive')
     
+    # Get text detector details
+    text_details = ai_detection.get('text_detector_details', {})
+    text_display = text_details.get('display_label', 'Inconclusive')
+    text_confidence = text_details.get('confidence', 0)
+    
     # Determine AI warning style
     conclusion_lower = ai_conclusion.lower()
     
@@ -1049,13 +1055,14 @@ def show_results_section():
     </div>
     """, unsafe_allow_html=True)
     
-    # Show AI detection banner
+    # Show AI detection banner with text detector details
     st.markdown(f"""
     <div style="padding: 15px; background: {ai_bg_color}; border-left: 5px solid {ai_border}; border-radius: 5px; margin-bottom: 20px;">
         <div style="display: flex; align-items: center;">
             <span style="font-size: 24px; margin-right: 10px;">{ai_icon}</span>
             <div>
                 <strong>{ai_text}</strong><br>
+                <span style="color: #666;">Text analysis: {text_display} ({text_confidence}% confidence)</span><br>
                 <span style="color: #666;">{ai_overall.get('explanation', '')}</span>
             </div>
         </div>
