@@ -239,6 +239,7 @@ def detect_ai_content(text, cover_analysis=None):
                 "explanation": "AI detection could not be completed"
             }
         }
+
 def send_email(recipient_email, analysis_results, cover_analysis, book_title, author_name, ai_detection_results):
     """Send full analysis results via email with AI detection"""
     
@@ -527,7 +528,9 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
             <h2>✍️ Writing Quality Analysis</h2>
             <p><strong>Prose Quality:</strong> {writing.get('prose_quality', '')}</p>
             <p><strong>Dialogue:</strong> {writing.get('dialogue', '')}</p>
+            <p><strong>Description:</strong> {writing.get('description', '')}</p>
             <p><strong>Voice:</strong> {writing.get('voice', '')}</p>
+            <p><strong>Technical Execution:</strong> {writing.get('technical_execution', '')}</p>
         </div>
         """
     
@@ -543,6 +546,7 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
             <div style="margin-bottom: 15px; padding: 10px; background: white; border-radius: 5px;">
                 <strong>{char.get('name', 'Unknown')}</strong> - {char.get('role', '')}<br>
                 <p style="margin: 5px 0 0 0; color: #666;">{char.get('description', '')}</p>
+                <p style="margin: 5px 0 0 0; color: #666;"><small>Appeal: {char.get('appeal_factor', '')}</small></p>
             </div>
             """
         body += "</div>"
@@ -556,6 +560,7 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
             <p><strong>Exposition:</strong> {arc.get('exposition', '')}</p>
             <p><strong>Rising Action:</strong> {arc.get('rising_action', '')}</p>
             <p><strong>Climax:</strong> {arc.get('climax', '')}</p>
+            <p><strong>Falling Action:</strong> {arc.get('falling_action', '')}</p>
             <p><strong>Resolution:</strong> {arc.get('resolution', '')}</p>
         </div>
         """
@@ -568,6 +573,8 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
             <h2>📊 Plot Analysis</h2>
             <p><strong>Opening Hook:</strong> {plot.get('opening_hook', '')}</p>
             <p><strong>Inciting Incident:</strong> {plot.get('inciting_incident', '')}</p>
+            <p><strong>Major Plot Points:</strong> {', '.join(plot.get('major_plot_points', []))}</p>
+            <p><strong>Plot Twists:</strong> {', '.join(plot.get('plot_twists', []))}</p>
         </div>
         """
     
@@ -578,6 +585,7 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
         <div style="padding: 20px; margin-top: 20px;">
             <h2>🎯 Themes</h2>
             <p><strong>Primary:</strong> {', '.join(themes.get('primary', []))}</p>
+            <p><strong>Secondary:</strong> {', '.join(themes.get('secondary', []))}</p>
         </div>
         """
     
@@ -596,29 +604,34 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
         """
     
     # Strengths & Improvements
-    body += f"""
+    strengths = analysis_results.get('strengths', [])
+    improvements = analysis_results.get('areas_for_improvement', [])
+    
+    if strengths:
+        body += f"""
         <div style="padding: 20px; background: #f8f9fa; border-radius: 10px; margin-top: 20px;">
             <h2>💪 Key Strengths</h2>
             <ul>
-    """
-    for strength in analysis_results.get('strengths', [])[:5]:
-        body += f"<li>{strength}</li>"
-    
-    body += """
+        """
+        for strength in strengths[:5]:
+            body += f"<li>{strength}</li>"
+        body += """
             </ul>
         </div>
-        
+        """
+    
+    if improvements:
+        body += f"""
         <div style="padding: 20px; margin-top: 20px;">
             <h2>🔧 Areas for Improvement</h2>
             <ul>
-    """
-    for area in analysis_results.get('areas_for_improvement', [])[:5]:
-        body += f"<li>{area}</li>"
-    
-    body += """
+        """
+        for area in improvements[:5]:
+            body += f"<li>{area}</li>"
+        body += """
             </ul>
         </div>
-    """
+        """
     
     # Target Audience
     if 'target_audience' in analysis_results:
@@ -1164,23 +1177,19 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
     if len(text) > 50000:
         text = text[:50000] + "... [truncated]"
     
-total_len = len(text)
-beginning = text[:min(5000, total_len//3)]
-middle = text[total_len//3:total_len//3*2][:5000]
-ending = text[-min(5000, total_len//3):]  # Make ending consistent
-
-cover_text = ""
-if cover_analysis:  # Make sure cover_analysis is defined elsewhere
-    cover_text = f"Cover analysis: {cover_analysis}"
-
-# Extract title and author from first few lines if not provided
-if provided_title and provided_author:
-    detected_title = provided_title
-    detected_author = provided_author
-else:
-    first_lines = [line.strip() for line in text[:1000].split('\n') if line.strip()]
-    detected_title = "Unknown Title"
-    detected_author = "Unknown Author"
+    total_len = len(text)
+    beginning = text[:min(5000, total_len//3)]
+    middle = text[total_len//3:total_len//3*2][:5000]
+    ending = text[-min(5000, total_len//3):]  # Make ending consistent
+    
+    cover_text = ""
+    if cover_analysis:
+        cover_text = f"Cover analysis: {cover_analysis}"
+    
+    # Extract title and author from first few lines if not provided
+    if provided_title and provided_author:
+        detected_title = provided_title
+        detected_author = provided_author
     else:
         first_lines = [line.strip() for line in text[:1000].split('\n') if line.strip()]
         detected_title = "Unknown Title"
@@ -1281,12 +1290,7 @@ else:
     7. For narrative arc: describe what you actually see in these excerpts
     8. Be specific - reference actual events, names, and details from the text
     9. For areas_for_improvement: be honest about weaknesses in THIS text
-
-        IMPORTANT INSTRUCTIONS:
-    ... (existing instructions) ...
     
-# Replace your existing scoring rules with this:
-
     ABSOLUTE MANDATORY SCORING RULES - YOU MUST FOLLOW THESE EXACTLY:
     
     You have detected and labeled this text as "AI-GENERATED CONTENT".
