@@ -1,0 +1,485 @@
+/* styles.css - Main styles for Book Marketability Checker */
+
+/* Main container */
+.stApp {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+/* Main content area */
+.main .block-container {
+    background: rgba(255, 255, 255, 0.95);
+    border-radius: 20px;
+    padding: 2rem;
+    margin: 2rem auto;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+    max-width: 1200px;
+}
+
+/* Headers */
+h1 {
+    color: #333;
+    font-weight: 700;
+    margin-bottom: 1.5rem;
+    text-align: center;
+    font-size: 2.5em;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+h2 {
+    color: #444;
+    font-weight: 600;
+    margin: 1.5rem 0 1rem;
+    border-bottom: 2px solid #f0f0f0;
+    padding-bottom: 0.5rem;
+}
+
+h3 {
+    color: #555;
+    font-weight: 500;
+    margin: 1rem 0;
+}
+
+/* Form elements */
+.stTextInput > div > div > input {
+    border-radius: 10px;
+    border: 2px solid #e0e0e0;
+    padding: 10px 15px;
+    font-size: 16px;
+    transition: all 0.3s ease;
+}
+
+.stTextInput > div > div > input:focus {
+    border-color: #667eea;
+    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+/* File uploader */
+.stFileUploader > div {
+    border: 3px dashed #667eea;
+    border-radius: 15px;
+    padding: 2rem;
+    background: rgba(102, 126, 234, 0.05);
+    transition: all 0.3s ease;
+}
+
+.stFileUploader > div:hover {
+    background: rgba(102, 126, 234, 0.1);
+    border-color: #764ba2;
+}
+
+/* Buttons */
+.stButton > button {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    border-radius: 25px;
+    padding: 12px 30px;
+    font-size: 18px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    width: 100%;
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+}
+
+.stButton > button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+}
+
+.stButton > button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+}
+
+/* Progress bar */
+.stProgress > div > div {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-radius: 10px;
+}
+
+/* Info boxes */
+.stAlert {
+    border-radius: 10px;
+    border-left: 5px solid;
+}
+
+/* Score box */
+.score-box {
+    text-align: center;
+    padding: 2rem;
+    border-radius: 15px;
+    color: white;
+    margin: 2rem 0;
+}
+
+.score-number {
+    font-size: 72px;
+    font-weight: bold;
+    margin: 0;
+    line-height: 1;
+}
+
+.score-label {
+    font-size: 24px;
+    margin: 10px 0 0;
+    opacity: 0.9;
+}
+
+/* Warning box */
+.warning-box {
+    background: #fff3cd;
+    border: 2px solid #ff8800;
+    border-radius: 10px;
+    padding: 1.5rem;
+    margin: 1.5rem 0;
+}
+
+.warning-box h3 {
+    color: #cc5500;
+    margin-top: 0;
+}
+
+.warning-box ul {
+    color: #856404;
+    margin: 1rem 0;
+}
+
+/* Success box */
+.success-box {
+    background: #d4edda;
+    border: 2px solid #28a745;
+    border-radius: 10px;
+    padding: 1.5rem;
+    margin: 1.5rem 0;
+}
+
+/* AI Detection banners */
+.ai-banner {
+    padding: 15px;
+    border-radius: 5px;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+}
+
+.ai-banner-text {
+    background: #e8f5e8;
+    border-left: 5px solid #4caf50;
+}
+
+.ai-banner-cover {
+    background: #e8f5e8;
+    border-left: 5px solid #4caf50;
+}
+
+.ai-icon {
+    font-size: 24px;
+    margin-right: 10px;
+}
+
+.ai-content {
+    flex: 1;
+}
+
+.ai-title {
+    font-weight: bold;
+}
+
+.ai-confidence {
+    color: #666;
+    font-size: 0.9em;
+}
+
+/* Email signup section */
+.email-section {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    padding: 2rem;
+    border-radius: 10px;
+    color: white;
+    text-align: center;
+    margin: 2rem 0;
+}
+
+.email-section h2 {
+    color: white;
+    border-bottom: none;
+}
+
+.email-section a {
+    background: white;
+    color: #667eea;
+    padding: 12px 30px;
+    text-decoration: none;
+    border-radius: 25px;
+    font-weight: bold;
+    display: inline-block;
+    margin-top: 1rem;
+    transition: all 0.3s ease;
+}
+
+.email-section a:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(255,255,255,0.3);
+}
+
+/* Metrics */
+.stMetric {
+    background: white;
+    padding: 1rem;
+    border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+}
+
+.stMetric label {
+    color: #666;
+    font-weight: 600;
+}
+
+.stMetric .metric-value {
+    color: #333;
+    font-weight: 700;
+}
+
+/* Expander */
+.streamlit-expanderHeader {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white !important;
+    border-radius: 10px !important;
+    padding: 1rem !important;
+    font-weight: 600 !important;
+}
+
+.streamlit-expanderHeader:hover {
+    opacity: 0.9;
+}
+
+.streamlit-expanderContent {
+    background: white;
+    border-radius: 0 0 10px 10px;
+    padding: 1.5rem !important;
+    border: 1px solid #e0e0e0;
+}
+
+/* Tabs */
+.stTabs [data-baseweb="tab-list"] {
+    gap: 2rem;
+}
+
+.stTabs [data-baseweb="tab"] {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white !important;
+    border-radius: 25px !important;
+    padding: 0.5rem 2rem !important;
+    font-weight: 600;
+}
+
+.stTabs [aria-selected="true"] {
+    opacity: 1;
+    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+}
+
+/* Footer */
+.footer {
+    text-align: center;
+    color: #666;
+    font-size: 12px;
+    margin-top: 3rem;
+    padding-top: 1rem;
+    border-top: 1px solid #e0e0e0;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+    .main .block-container {
+        padding: 1rem;
+        margin: 1rem;
+    }
+    
+    h1 {
+        font-size: 2em;
+    }
+    
+    .score-number {
+        font-size: 48px;
+    }
+    
+    .score-label {
+        font-size: 18px;
+    }
+    
+    .stTabs [data-baseweb="tab"] {
+        padding: 0.3rem 1rem !important;
+        font-size: 14px;
+    }
+}
+
+/* Loading spinner */
+.stSpinner > div {
+    border-color: #667eea !important;
+}
+
+/* Error messages */
+.stError {
+    background-color: #ffebee;
+    border-color: #f44336;
+    color: #d32f2f;
+}
+
+/* Success messages */
+.stSuccess {
+    background-color: #e8f5e8;
+    border-color: #4caf50;
+    color: #2e7d32;
+}
+
+/* Info messages */
+.stInfo {
+    background-color: #e3f2fd;
+    border-color: #2196f3;
+    color: #0b5e8c;
+}
+
+/* Warning messages */
+.stWarning {
+    background-color: #fff3e0;
+    border-color: #ff9800;
+    color: #b26a00;
+}
+
+/* Radio buttons */
+.stRadio > div {
+    background: white;
+    padding: 1rem;
+    border-radius: 10px;
+    border: 1px solid #e0e0e0;
+}
+
+.stRadio label {
+    color: #333;
+    font-weight: 500;
+}
+
+/* Checkbox */
+.stCheckbox label {
+    color: #333;
+    font-weight: 500;
+}
+
+/* Selectbox */
+.stSelectbox > div > div {
+    border-radius: 10px;
+    border: 2px solid #e0e0e0;
+}
+
+/* Text area */
+.stTextArea textarea {
+    border-radius: 10px;
+    border: 2px solid #e0e0e0;
+    font-family: 'Courier New', monospace;
+}
+
+/* Number input */
+.stNumberInput input {
+    border-radius: 10px;
+    border: 2px solid #e0e0e0;
+}
+
+/* Date input */
+.stDateInput input {
+    border-radius: 10px;
+    border: 2px solid #e0e0e0;
+}
+
+/* Time input */
+.stTimeInput input {
+    border-radius: 10px;
+    border: 2px solid #e0e0e0;
+}
+
+/* Color picker */
+.stColorPicker {
+    border-radius: 10px;
+    border: 2px solid #e0e0e0;
+}
+
+/* Image */
+.stImage {
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+}
+
+/* DataFrame */
+.stDataFrame {
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid #e0e0e0;
+}
+
+/* Table */
+.stTable {
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid #e0e0e0;
+}
+
+/* Code block */
+.stCode {
+    background: #f5f5f5;
+    border-radius: 10px;
+    padding: 1rem;
+    font-family: 'Courier New', monospace;
+}
+
+/* Markdown */
+.stMarkdown {
+    color: #333;
+    line-height: 1.6;
+}
+
+/* Latex */
+.stLatex {
+    background: #f5f5f5;
+    border-radius: 10px;
+    padding: 1rem;
+    overflow-x: auto;
+}
+
+/* Balloons */
+.stBalloons {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 9999;
+}
+
+/* Snow */
+.stSnow {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 9999;
+}
+
+/* Confetti */
+.stConfetti {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 9999;
+}
