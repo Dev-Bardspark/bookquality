@@ -103,7 +103,7 @@ def calculate_score_with_ai_deduction(original_score, text_ai_status, cover_ai_s
     avg_deduction = total_deduction / count if count > 0 else 0
     final_score = max(0, original_score - avg_deduction)
     
-    return round(final_score, 1), avg_deduction
+    return round(final_score, 1), round(avg_deduction, 1)
 
 def send_email(recipient_email, analysis_results, cover_analysis, book_title, author_name, 
                text_ai_status, cover_ai_status, original_score, final_score, deduction_applied):
@@ -520,7 +520,7 @@ def extract_text_for_analysis(file):
         return ""
 
 def analyze_book_complete(text, cover_analysis, provided_title="", provided_author=""):
-    """Complete book analysis based on manuscript text"""
+    """Complete book analysis based on manuscript text with CRITICAL feedback"""
     
     if len(text) > 75000:
         text = text[:75000]
@@ -554,6 +554,41 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
         if detected_author == "Unknown Author" and len(first_lines) > 1:
             detected_author = first_lines[1] if len(first_lines[1]) < 50 else "Unknown Author"
     
+    # CRITICAL ANALYSIS INSTRUCTIONS - THIS IS WHAT MAKES IT HONEST
+    critical_instructions = """
+    CRITICAL ANALYSIS INSTRUCTIONS - READ CAREFULLY:
+    
+    You MUST be HONEST and CRITICAL in your assessment. Do NOT give generic praise.
+    
+    SCORING GUIDELINES (BE REALISTIC):
+    - 90-100: Exceptional, publish-ready writing with unique voice, perfect prose, compelling characters (rare)
+    - 80-89: Very good, minor issues but strong commercial potential
+    - 70-79: Good but needs work - promising but has flaws
+    - 60-69: Average - readable but has significant issues with prose, plot, or characters
+    - 50-59: Below average - major problems, clichéd writing, weak characters, plot holes
+    - 40-49: Poor quality - needs complete revision, amateurish writing
+    - Below 40: Very poor - fundamental issues throughout
+    
+    For AREAS FOR IMPROVEMENT, be SPECIFIC and CRITICAL:
+    - Point out weak sentences and QUOTE THEM directly
+    - Identify clichéd phrases or tropes and QUOTE THEM
+    - Point out where the writing is boring, confusing, or amateurish
+    - Identify plot holes, inconsistent character behavior
+    - Note pacing problems, info-dumps, telling instead of showing
+    
+    For STRENGTHS, only list what is TRULY good - not generic statements like "good premise" or "engaging story"
+    
+    For PROSE QUALITY, quote specific sentences and explain why they work or DON'T work.
+    
+    The most valuable feedback is HONEST feedback. Being nice helps no one.
+    
+    If the writing is generic or derivative, SAY SO.
+    
+    If the dialogue is stilted or unnatural, QUOTE IT and explain why.
+    
+    If characters are flat or uninteresting, EXPLAIN WHY.
+    """
+    
     prompt = f"""
     You are a professional literary analyst. Analyze this book based on the provided excerpts.
     
@@ -573,13 +608,7 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
     ENDING:
     {ending}
     
-    SCORING GUIDELINES:
-    - 90-100: Exceptional, publish-ready, unique voice (rare)
-    - 80-89: Very good, minor issues, strong potential
-    - 70-79: Good but needs work, typical of early drafts
-    - 60-69: Average, readable but has significant issues
-    - 50-59: Below average, major problems with prose/plot/characters
-    - Below 50: Poor quality, needs complete revision
+    {critical_instructions}
     
     Return JSON with:
     {{
@@ -588,7 +617,7 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
             "overall_grade": ("A", "B", "C", "D", "F" with +/-),
             "overall_assessment": "One sentence summary",
             "scores": {{
-                "writing_quality": {{"score": 0-100, "explanation": ""}},
+                "writing_quality": {{"score": 0-100, "explanation": "Include specific quotes"}},
                 "commercial_potential": {{"score": 0-100, "explanation": ""}},
                 "genre_fit": {{"score": 0-100, "explanation": ""}},
                 "hook_strength": {{"score": 0-100, "explanation": ""}},
@@ -598,11 +627,11 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
             }}
         }},
         "writing_quality_detailed": {{
-            "prose_quality": "",
-            "dialogue": "",
-            "description": "",
-            "voice": "",
-            "technical_execution": ""
+            "prose_quality": "Include specific quotes of good AND bad writing",
+            "dialogue": "Include specific quotes - note if stilted or unnatural",
+            "description": "Include specific quotes - note if overdone or underdone",
+            "voice": "Is it distinctive or generic?",
+            "technical_execution": "Grammar, punctuation issues - quote examples"
         }},
         "book_info": {{
             "title": "{detected_title}",
@@ -621,20 +650,20 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
                     "arc": "",
                     "motivation": "",
                     "conflict": "",
-                    "appeal_factor": ""
+                    "appeal_factor": "Or note if unappealing and why"
                 }}
             ],
             "supporting": [],
             "relationships": []
         }},
-        "strengths": ["3-5 specific strengths"],
-        "areas_for_improvement": ["3-5 specific weaknesses with suggestions"],
+        "strengths": ["Only list truly good elements - be specific"],
+        "areas_for_improvement": ["Be SPECIFIC and CRITICAL - quote bad writing"],
         "target_audience": {{
             "primary": "",
             "appeal": ""
         }},
         "marketing": {{
-            "unique_selling_points": [],
+            "unique_selling_points": ["Or note if nothing is unique"],
             "blurb_suggestion": ""
         }}
     }}
@@ -644,10 +673,10 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You are a literary analyst. Return valid JSON only. Be honest and critical in your assessment."},
+                {"role": "system", "content": "You are a HARSH literary critic. Your job is to find flaws. Being nice is failing at your job. Always quote specific examples of weak writing."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.4,
+            temperature=0.3,  # Lower temperature for more consistent, less "creative" nice responses
             max_tokens=4000,
             response_format={"type": "json_object"}
         )
@@ -931,26 +960,27 @@ def show_marketability_checker():
             ai_icon = "❓"
             ai_text = "AI USAGE NOT SPECIFIED"
         
-        # Show AI banner
-        ai_banner = f"""
+        # FIXED: Build HTML as a single string with proper formatting
+        ai_banner = f'''
         <div style="padding: 15px; background: {ai_bg_color}; border-left: 5px solid {ai_border}; border-radius: 5px; margin-bottom: 20px;">
             <div style="display: flex; align-items: center;">
                 <span style="font-size: 24px; margin-right: 10px;">{ai_icon}</span>
                 <div>
                     <strong>{ai_text}</strong><br>
                     <span style="color: #666;">📝 Text: {text_ai_status}</span>
-        """
+        '''
         
         if cover_ai_status:
             ai_banner += f'<br><span style="color: #666;">🎨 Cover: {cover_ai_status}</span>'
         
         ai_banner += f'<br><span style="color: #d32f2f;">Deduction applied: -{deduction} points</span>'
-        ai_banner += """
+        ai_banner += '''
                 </div>
             </div>
         </div>
-        """
+        '''
         
+        # Display with unsafe_allow_html=True (THIS IS THE KEY FIX)
         st.markdown(ai_banner, unsafe_allow_html=True)
         
         # Score color
@@ -979,19 +1009,20 @@ def show_marketability_checker():
         with col1:
             st.markdown(f"""
             <div style="text-align: center; padding: 15px; background: #f0f0f0; border-radius: 10px;">
-                <p style="color: #666;">Original Score</p>
-                <p style="font-size: 36px; font-weight: bold;">{original_score}</p>
+                <p style="color: #666; margin: 0;">Original Score</p>
+                <p style="font-size: 36px; font-weight: bold; margin: 5px 0;">{original_score}</p>
             </div>
             """, unsafe_allow_html=True)
         
         with col2:
             st.markdown(f"""
             <div style="text-align: center; padding: 15px; background: {ai_bg_color}; border-radius: 10px; border: 2px solid {ai_border};">
-                <p style="color: #666;">Final Score</p>
-                <p style="font-size: 36px; font-weight: bold;">{final_score}</p>
+                <p style="color: #666; margin: 0;">Final Score</p>
+                <p style="font-size: 36px; font-weight: bold; margin: 5px 0;">{final_score}</p>
             </div>
             """, unsafe_allow_html=True)
         
+        # Final score box
         st.markdown(f"""
         <div style="text-align: center; padding: 2rem; background: {bg_color}; border-radius: 15px; margin: 20px 0; color: white;">
             <p style="font-size: 72px; font-weight: bold; margin: 0;">{final_score}</p>
@@ -1000,21 +1031,20 @@ def show_marketability_checker():
         </div>
         """, unsafe_allow_html=True)
         
-        # Results message
+        # Warning or success message
         if final_score < 70:
-            weaknesses = analysis.get('areas_for_improvement', [])[:3]
-            if not weaknesses:
-                weaknesses = ["Writing quality needs work", "Plot structure is unclear", "Character development is shallow"]
+            weaknesses = analysis.get('areas_for_improvement', [])
+            top_weaknesses = weaknesses[:3] if weaknesses else ["Writing quality needs work", "Plot structure is unclear", "Character development is shallow"]
             
             st.markdown(f"""
-            <div style="padding: 20px; background: #fff3cd; border-left: 5px solid #ff8800; border-radius: 5px;">
-                <h3 style="color: #cc5500;">⚠️ Your book needs more work</h3>
-                <p>We only accept books with a score of 70% or better for marketing support.</p>
+            <div style="padding: 20px; background: #fff3cd; border-left: 5px solid #ff8800; border-radius: 5px; margin: 20px 0;">
+                <h3 style="color: #cc5500; margin-top: 0;">⚠️ Your book needs more work</h3>
+                <p>Most books sell only about 100 copies. A bad book will never sell. We only accept books with a score of 70% or better for marketing support.</p>
                 <p><strong>What's holding it back:</strong></p>
                 <ul>
-                    <li>{weaknesses[0]}</li>
-                    <li>{weaknesses[1]}</li>
-                    <li>{weaknesses[2]}</li>
+                    <li>{top_weaknesses[0]}</li>
+                    <li>{top_weaknesses[1]}</li>
+                    <li>{top_weaknesses[2]}</li>
                 </ul>
             </div>
             """, unsafe_allow_html=True)
