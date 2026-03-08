@@ -688,7 +688,7 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
     
     You MUST be HONEST and CRITICAL in your assessment. Do NOT give generic praise.
     
-    SCORING GUIDELINES (BE REALISTIC):
+    SCORING GUIDELINES (BE GENEROUS):
     - 90-100: Exceptional, publish-ready writing with unique voice, perfect prose, compelling characters (rare)
     - 80-89: Very good, minor issues but strong commercial potential
     - 70-79: Good but needs work - promising but has flaws
@@ -934,6 +934,24 @@ def show_marketability_checker():
         <p>Get your COMPLETE book analysis emailed to you in 60 seconds</p>
     </div>
     """, unsafe_allow_html=True)
+
+        # ADD THIS FEATURE LIST BACK (right here)
+    with st.expander("📋 What's included in your free analysis", expanded=True):
+        st.markdown("""
+        - 📖 **Full book analysis** (genre, tone, writing style, pacing)
+        - 📊 **Marketability score** with detailed breakdown
+        - ✍️ **Writing quality assessment** (prose, dialogue, voice)
+        - 👥 **Character analysis** (main characters and their roles)
+        - 📈 **Narrative arc** (exposition, rising action, climax, resolution)
+        - 🎯 **Theme identification** and motif analysis
+        - 💪 **Key strengths** of your manuscript
+        - 🔧 **Areas for improvement** with specific suggestions
+        - 🎨 **Cover analysis** (if you upload a PNG)
+        - 🎯 **Target audience** identification
+        - 📢 **Marketing insights** and blurb suggestion
+        """)
+    
+    st.markdown("---")
     
     # Initialize session state
     if 'analysis_complete' not in st.session_state:
