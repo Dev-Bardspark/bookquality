@@ -101,6 +101,8 @@ def calculate_score_with_ai_deduction(original_score, text_ai_status, cover_ai_s
         count += 1
     
     avg_deduction = total_deduction / count if count > 0 else 0
+    
+    # SUBTRACT for AI usage (AI lowers the score)
     final_score = max(0, original_score - avg_deduction)
     
     return round(final_score, 1), round(avg_deduction, 1)
@@ -247,10 +249,10 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
             <div class="deduction-box">
                 <p style="margin: 0 0 10px 0; font-weight: bold;">📊 Score Adjustment:</p>
                 <p style="margin: 5px 0;">Original Marketability Score: <strong>{original_score}</strong></p>
-                <p style="margin: 5px 0;">Deduction Applied: <strong style="color: #d32f2f;">-{deduction_applied} points</strong></p>
+                <p style="margin: 5px 0;">AI Deduction Applied: <strong style="color: #d32f2f;">-{deduction_applied} points</strong></p>
                 <p style="margin: 5px 0; font-size: 18px;">Final Score: <strong style="color: #667eea;">{final_score}</strong></p>
                 <p style="margin: 10px 0 0 0; font-size: 14px; color: #666;">
-                    *Deductions: Human (0), Assisted (10), AI (20) - averaged if both specified
+                    *Deductions: Human (0), Assisted (-10), AI (-20) - averaged if both specified
                 </p>
             </div>
             
@@ -606,7 +608,7 @@ def extract_text_for_analysis(file):
         return ""
 
 def analyze_book_complete(text, cover_analysis, provided_title="", provided_author=""):
-    """Complete book analysis based on manuscript text with CRITICAL feedback - FULL VERSION"""
+    """Complete book analysis based on manuscript text with balanced feedback"""
     
     if len(text) > 75000:
         text = text[:75000]
@@ -640,17 +642,18 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
         if detected_author == "Unknown Author" and len(first_lines) > 1:
             detected_author = first_lines[1] if len(first_lines[1]) < 50 else "Unknown Author"
     
-    # GENRE CLASSIFICATION RULES
+    # GENRE CLASSIFICATION RULES - ADDED GENEALOGY
     genre_rules = """
     GENRE CLASSIFICATION RULES - READ CAREFULLY:
     - If the book is a personal story about the author's own life experiences → use "Memoir"
     - "Non-Fiction" is ONLY for encyclopedias, textbooks, how-to books, informational guides
     - DO NOT use "Non-Fiction" for memoirs, biographies, or autobiographies
+    - "Genealogy" or "Family History" is for books documenting family trees and ancestral records
     - You can select MULTIPLE genres that fit (e.g., a memoir could also be LGBTQ+ Fiction)
     - List them in order of relevance
     """
     
-    # ALLOWED GENRES LIST WITH DESCRIPTIONS
+    # ALLOWED GENRES LIST WITH DESCRIPTIONS - ADDED GENEALOGY
     allowed_genres_text = """
     ALLOWED GENRES (use ONLY these for genre and subgenres):
     - Romance: Books centered on romantic relationships, love stories, and emotional connections between characters, often with happy endings.
@@ -670,6 +673,7 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
     - Memoir: Personal, true accounts of the author's own experiences, usually focused on specific themes or periods of life.
     - Biography: A detailed account of a real person's life, written by someone else, based on research and sources.
     - Autobiography: A full, chronological account of the author's own entire life, written by the person themselves.
+    - Genealogy: Books documenting family trees, ancestral records, and lineage research. (Added for family history documents)
     - Self-Help: Practical books offering advice, strategies, or guidance for personal improvement, success, health, or happiness.
     - LGBTQ+ Fiction: Stories that center queer characters, identities, relationships, and experiences.
     - Paranormal: Fiction involving ghosts, vampires, werewolves, psychics, or other supernatural phenomena.
@@ -682,12 +686,8 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
     You can select MULTIPLE genres that fit the book.
     """
     
-    # CRITICAL ANALYSIS INSTRUCTIONS
-    critical_instructions = """
-    CRITICAL ANALYSIS INSTRUCTIONS - READ CAREFULLY:
-    
-    You MUST be HONEST and CRITICAL in your assessment. Do NOT give generic praise.
-    
+    # GENEROUS SCORING GUIDELINES
+    scoring_guidelines = """
     SCORING GUIDELINES (BE GENEROUS):
     - 90-100: Exceptional, publish-ready writing with unique voice, perfect prose, compelling characters (rare)
     - 80-89: Very good, minor issues but strong commercial potential
@@ -697,24 +697,19 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
     - 40-49: Poor quality - needs complete revision, amateurish writing
     - Below 40: Very poor - fundamental issues throughout
     
-    For AREAS FOR IMPROVEMENT, be SPECIFIC and CRITICAL:
-    - Point out weak sentences and QUOTE THEM directly
-    - Identify clichéd phrases or tropes and QUOTE THEM
-    - Point out where the writing is boring, confusing, or amateurish
-    - Identify plot holes, inconsistent character behavior
-    - Note pacing problems, info-dumps, telling instead of showing
+    GRADE MAPPING (match letter grades to these score ranges):
+    - A = 90-100
+    - B = 80-89
+    - C = 70-79
+    - D = 60-69
+    - F = Below 60
+    """
     
-    For STRENGTHS, only list what is TRULY good - not generic statements like "good premise" or "engaging story"
-    
-    For PROSE QUALITY, quote specific sentences and explain why they work or DON'T work.
-    
-    The most valuable feedback is HONEST feedback. Being nice helps no one.
-    
-    If the writing is generic or derivative, SAY SO.
-    
-    If the dialogue is stilted or unnatural, QUOTE IT and explain why.
-    
-    If characters are flat or uninteresting, EXPLAIN WHY.
+    # CALIBRATION NOTE
+    calibration_note = """
+    CALIBRATION REFERENCE: A typical, competent memoir with basic storytelling 
+    should score around 65-75. A well-written literary work should score 80-90.
+    Score generously but honestly.
     """
     
     prompt = f"""
@@ -729,6 +724,10 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
     
     {allowed_genres_text}
     
+    {scoring_guidelines}
+    
+    {calibration_note}
+    
     ACTUAL MANUSCRIPT EXCERPTS - USE THESE FOR YOUR ANALYSIS:
     
     BEGINNING:
@@ -739,8 +738,6 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
     
     ENDING:
     {ending}
-    
-    {critical_instructions}
     
     IMPORTANT INSTRUCTIONS:
     1. The book title MUST be "{detected_title}" in your response
@@ -753,22 +750,23 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
        - How they change (if shown)
        - What drives them
        - Their internal or external struggles
-       - Why readers will connect with them (or note if they're unappealing and why)
+       - Why readers will connect with them
     5. Include supporting characters and key relationships between characters
     6. For character_development section, describe how the protagonist evolves, what motivates any antagonist, and how supporting characters change
     7. For narrative arc: describe what you actually see in these excerpts
     8. Be specific - reference actual events, names, and details from the text
-    9. For areas_for_improvement: be SPECIFIC and CRITICAL about weaknesses in THIS text - quote bad writing
+    9. For areas_for_improvement: be honest but constructive about weaknesses in THIS text
+    10. Match the overall_grade to the score ranges in the scoring guidelines
     
     Return valid JSON only with exactly this structure:
     
     {{
         "marketability": {{
             "overall_score": (0-100 number based on these excerpts),
-            "overall_grade": ("A", "B", "C", "D", "F" with +/-),
+            "overall_grade": (one of: "A+", "A", "A-", "B+", "B", "B-", "C+", "C", "C-", "D+", "D", "D-", "F" based on the score),
             "overall_assessment": "One sentence summary of this specific book",
             "scores": {{
-                "writing_quality": {{"score": 0-100, "explanation": "Based on the prose in these excerpts - include specific quotes"}},
+                "writing_quality": {{"score": 0-100, "explanation": "Based on the prose in these excerpts"}},
                 "commercial_potential": {{"score": 0-100, "explanation": "Based on the hook and content shown"}},
                 "genre_fit": {{"score": 0-100, "explanation": "How well this matches genre conventions"}},
                 "hook_strength": {{"score": 0-100, "explanation": "Based on the opening excerpt"}},
@@ -779,11 +777,11 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
         }},
         
         "writing_quality_detailed": {{
-            "prose_quality": "Assessment of sentence-level writing from these excerpts - quote good AND bad examples",
-            "dialogue": "Quality and naturalness of dialogue from these excerpts - quote examples, note if stilted",
-            "description": "Quality of descriptive passages from these excerpts - quote examples, note if overdone or underdone",
-            "voice": "Strength and consistency of narrative voice in these excerpts - is it distinctive or generic?",
-            "technical_execution": "Grammar, punctuation, formatting issues in these excerpts - quote examples"
+            "prose_quality": "Assessment of sentence-level writing from these excerpts",
+            "dialogue": "Quality and naturalness of dialogue from these excerpts",
+            "description": "Quality of descriptive passages from these excerpts",
+            "voice": "Strength and consistency of narrative voice in these excerpts",
+            "technical_execution": "Grammar, punctuation, formatting in these excerpts"
         }},
         
         "book_info": {{
@@ -804,7 +802,7 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
                     "arc": "how they change (if shown)",
                     "motivation": "what drives them (if shown)",
                     "conflict": "internal or external struggles (if shown)",
-                    "appeal_factor": "Why readers will connect with this character - or note if unappealing and why"
+                    "appeal_factor": "Why readers will connect with this character"
                 }}
             ],
             "supporting": ["list of supporting characters mentioned"],
@@ -837,9 +835,9 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
             "secondary": ["other themes hinted at"]
         }},
         
-        "strengths": ["5 specific strengths of THIS manuscript with examples from the text - only list what is TRULY good"],
+        "strengths": ["5 specific strengths of THIS manuscript with examples from the text"],
         
-        "areas_for_improvement": ["5 specific weaknesses in THIS manuscript with concrete suggestions and QUOTED examples of bad writing"],
+        "areas_for_improvement": ["5 specific weaknesses in THIS manuscript with concrete suggestions based on the text"],
         
         "target_audience": {{
             "primary": "who would enjoy THIS specific book",
@@ -847,7 +845,7 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
         }},
         
         "marketing": {{
-            "unique_selling_points": ["what makes THIS specific book special based on excerpts - or note if nothing is unique"],
+            "unique_selling_points": ["what makes THIS specific book special based on excerpts"],
             "blurb_suggestion": "A potential back-cover blurb based on THIS content"
         }}
     }}
@@ -857,10 +855,10 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You are a HARSH literary critic. Your job is to find flaws. Being nice is failing at your job. Always quote specific examples of weak writing. Base your analysis strictly on the provided excerpts and return valid JSON only."},
+                {"role": "system", "content": "You are a professional literary analyst. Return valid JSON only. Base your analysis strictly on the provided excerpts."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.3,  # Lower temperature for more consistent, less "creative" nice responses
+            temperature=0.7,
             max_tokens=4000,
             response_format={"type": "json_object"}
         )
@@ -934,8 +932,8 @@ def show_marketability_checker():
         <p>Get your COMPLETE book analysis emailed to you in 60 seconds</p>
     </div>
     """, unsafe_allow_html=True)
-
-        # ADD THIS FEATURE LIST BACK (right here)
+    
+    # Feature list - RESTORED
     with st.expander("📋 What's included in your free analysis", expanded=True):
         st.markdown("""
         - 📖 **Full book analysis** (genre, tone, writing style, pacing)
