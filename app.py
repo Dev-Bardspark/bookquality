@@ -1,4 +1,4 @@
-# BookMarketabilityChecker.py - COMPLETE FIXED VERSION WITH PNG-ONLY COVER DETECTOR
+# BookMarketabilityChecker.py - COMPLETE WORKING VERSION WITH FULL ANALYSIS
 import streamlit as st
 import openai
 import PyPDF2
@@ -17,9 +17,6 @@ from xml.etree import ElementTree
 import tempfile
 import os
 
-# Import the PNG-only cover detector
-import ai_cover_detector_gpt4o_mini_png_only as ai_cover
-
 # Initialize OpenAI with secrets
 client = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
@@ -31,28 +28,16 @@ SENDER_PASSWORD = st.secrets["SENDER_PASSWORD"]
 USE_TLS = st.secrets.get("use_tls", True)
 
 def analyze_cover(cover_file):
-    """
-    Full cover analysis using the PERFECT PNG-only detector
-    NO CONVERSION - only accepts PNG files directly
-    """
+    """Cover analysis - style analysis only"""
     try:
-        # Check if it's actually a PNG
         if cover_file.type != "image/png" and not cover_file.name.lower().endswith('.png'):
             st.error("❌ ONLY PNG FILES ARE ACCEPTED FOR COVER ANALYSIS")
-            st.info("Please convert your image to PNG first (Paint, GIMP, or online converters)")
+            st.info("Please convert your image to PNG first")
             return None
         
-        # Get the PNG bytes directly - NO CONVERSION
         png_bytes = cover_file.getvalue()
+        st.success("✅ PNG file accepted - analyzing cover design...")
         
-        # Show what we're doing
-        st.success("✅ PNG file accepted - analyzing...")
-        
-        # Detect AI using your PERFECT function
-        ai_detection_json = ai_cover.detect_ai_cover(png_bytes)
-        ai_detection_result = json.loads(ai_detection_json)
-        
-        # Also get style analysis (this is separate from AI detection)
         cover_base64 = base64.b64encode(png_bytes).decode('utf-8')
         
         style_prompt = """Analyze this book cover's design elements. Return JSON with:
@@ -90,228 +75,75 @@ def analyze_cover(cover_file):
             response_format={"type": "json_object"}
         )
         
-        style_result = json.loads(style_response.choices[0].message.content)
-        
-        # Combine both analyses
-        result = {
-            **style_result,
-            "ai_detection": {
-                "is_ai_generated": ai_detection_result.get("verdict") == "likely_ai",
-                "verdict": ai_detection_result.get("verdict", "inconclusive"),
-                "confidence": ai_detection_result.get("confidence", 0),
-                "indicators_found": ai_detection_result.get("key_indicators", []),
-                "explanation": ai_detection_result.get("explanation", "")
-            }
-        }
-        
-        return result
+        return json.loads(style_response.choices[0].message.content)
         
     except Exception as e:
         st.error(f"Cover analysis failed: {e}")
         return None
 
-def detect_ai_content(text, cover_analysis=None):
-    """
-    Analyze text and cover for signs of AI generation
-    Returns: dict with detection results
-    """
-    # Extract cover AI info if available
-    cover_indicators = []
-    cover_human = []
-    cover_ai_summary = ""
-    cover_verdict = "inconclusive"
-    cover_confidence = 0
+def calculate_score_with_ai_deduction(original_score, text_ai_status, cover_ai_status):
+    """Apply deductions based on user's self-declared AI usage"""
+    deduction_map = {
+        "Exclusively Human": 0,
+        "AI Assisted": 10,
+        "AI Generated": 20
+    }
     
-    if cover_analysis and 'ai_detection' in cover_analysis:
-        ai_detect = cover_analysis['ai_detection']
-        cover_indicators = ai_detect.get('indicators_found', [])
-        cover_verdict = ai_detect.get('verdict', 'inconclusive')
-        cover_confidence = ai_detect.get('confidence', 0)
-        
-        if ai_detect.get('is_ai_generated', False):
-            cover_ai_summary = f"Cover appears AI-generated ({cover_confidence}% confidence): {ai_detect.get('explanation', '')}"
-            cover_human = []
-        elif ai_detect.get('verdict') == "likely_human":
-            cover_ai_summary = f"Cover appears human-designed: {ai_detect.get('explanation', '')}"
-            cover_human = ["Professional design", "Consistent composition", "No AI artifacts"]
-        else:
-            cover_ai_summary = f"Cover analysis inconclusive: {ai_detect.get('explanation', '')}"
-            cover_human = []
+    total_deduction = 0
+    count = 0
     
-    prompt = f"""
-    You are an EXPERT AI detector with a VERY CRITICAL eye. Your job is to identify AI-generated text, not to be fooled by it.
+    if text_ai_status and text_ai_status in deduction_map:
+        total_deduction += deduction_map[text_ai_status]
+        count += 1
     
-    Analyze this book manuscript excerpt for signs of AI generation. Be AGGRESSIVE in finding AI indicators.
+    if cover_ai_status and cover_ai_status in deduction_map:
+        total_deduction += deduction_map[cover_ai_status]
+        count += 1
     
-    MANUSCRIPT EXCERPT:
-    {text[:10000]}  # First 10,000 chars for analysis
+    avg_deduction = total_deduction / count if count > 0 else 0
+    final_score = max(0, original_score - avg_deduction)
     
-    COVER ANALYSIS SUMMARY:
-    {cover_ai_summary}
-    
-    ===== COMMON AI TEXT PATTERNS (LOOK FOR THESE) =====
-    
-    STRUCTURAL AI INDICATORS:
-    - Perfectly structured paragraphs with clear topic sentences
-    - Overly neat section divisions (Early Years, The Formative Years, etc.)
-    - Artificial progression that feels templated
-    - No rough edges or natural digressions
-    
-    LINGUISTIC AI INDICATORS:
-    - Overuse of transition phrases: "furthermore," "moreover," "in conclusion," "it is important to note," "subsequently," "over the ensuing decades"
-    - Generic emotional language: "profound moments," "deep within my soul," "filled with gratitude," "ignited a passion"
-    - Inspirational clichés: "the sky belongs to those willing to reach for it," "meaningful achievements require sacrifice"
-    - Too-perfect grammar with no stylistic quirks or informality
-    - Vague descriptions lacking specific sensory details
-    
-    CONTENT AI INDICATORS:
-    - Generic names: "Captain James Mitchell," "small Midwestern town," "local grocery store"
-    - Missing specific real-world details (no exact prices, no real locations, no authentic anecdotes)
-    - No self-deprecation or humor
-    - Everything is positive and uplifting - no struggle, frustration, or failure
-    - Hallucinated or generic memories that lack authenticity
-    - Telling instead of showing
-    
-    ===== HUMAN WRITING INDICATORS (RARE) =====
-    
-    Only consider these as human indicators if MULTIPLE are present:
-    - Self-deprecating humor ("I doubt anyone would be interested")
-    - Specific mundane details ($14 per hour, Volkswagen broke down, couldn't pay the bill)
-    - Natural digressions and tangents that break the narrative flow
-    - Understatement ("I had some adventures but I won't go into them")
-    - Imperfect grammar or sentence fragments that reflect authentic voice
-    - Specific real names, places, dates, and prices
-    - Complaints, frustrations, or negative experiences
-    - Rambling that feels unpolished and真实
-    
-    ===== DECISION RULES =====
-    - "Clearly AI-generated": Multiple AI indicators present, few to no human indicators
-    - "Possibly AI-assisted": Mix of AI patterns and some human elements
-    - "Likely human-written": Strong human indicators throughout, few AI patterns
-    - "Inconclusive": Unclear or insufficient evidence
-    
-    Be CONSERVATIVE about calling something human. If the text reads like a polished memoir with generic emotional language and no specific details, flag it as AI.
-    
-    Return JSON with:
-    {{
-        "text_analysis": {{
-            "indicators_found": ["list specific AI patterns found in the text - be thorough and quote examples if possible"],
-            "human_indicators_found": ["list specific human patterns found - be critical and only include genuine markers"]
-        }},
-        "cover_analysis": {{
-            "indicators_found": {json.dumps(cover_indicators)},
-            "human_indicators_found": {json.dumps(cover_human)},
-            "verdict": "{cover_verdict}",
-            "confidence": {cover_confidence}
-        }},
-        "overall_assessment": {{
-            "conclusion": ONE OF THESE EXACT PHRASES: "Clearly AI-generated", "Possibly AI-assisted", "Likely human-written", or "Inconclusive",
-            "explanation": "Detailed explanation with specific textual evidence supporting your conclusion"
-        }}
-    }}
-    """
-    
-    try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "You are an expert AI detector with a critical eye. You do not get fooled by polished writing. You look for the subtle patterns that distinguish AI from authentic human voice. Be aggressive in finding AI indicators and conservative about calling something human."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.2,
-            max_tokens=1000,
-            response_format={"type": "json_object"}
-        )
-        
-        return json.loads(response.choices[0].message.content)
-    except Exception as e:
-        st.error(f"AI detection failed: {e}")
-        return {
-            "text_analysis": {"indicators_found": [], "human_indicators_found": []},
-            "cover_analysis": {
-                "indicators_found": cover_indicators, 
-                "human_indicators_found": cover_human,
-                "verdict": cover_verdict,
-                "confidence": cover_confidence
-            },
-            "overall_assessment": {
-                "conclusion": "Inconclusive",
-                "explanation": "AI detection could not be completed"
-            }
-        }
+    return round(final_score, 1), round(avg_deduction, 1)
 
-def send_email(recipient_email, analysis_results, cover_analysis, book_title, author_name, ai_detection_results):
-    """Send full analysis results via email with AI detection"""
+def send_email(recipient_email, analysis_results, cover_analysis, book_title, author_name, 
+               text_ai_status, cover_ai_status, original_score, final_score, deduction_applied):
+    """Send full analysis results via email"""
     
     subject = f"Your Complete Book Analysis: {book_title} by {author_name}"
     
-    # Get marketability score
     marketability = analysis_results.get('marketability', {})
-    overall_score = marketability.get('overall_score', 0)
-    
-    # Format the email body with FULL analysis
-    score = marketability.get('overall_score', 'N/A')
     grade = marketability.get('overall_grade', 'N/A')
     book_info = analysis_results.get('book_info', {})
     
-    # Get AI detection results
-    ai_overall = ai_detection_results.get('overall_assessment', {})
-    ai_conclusion = ai_overall.get('conclusion', 'Inconclusive')
-    ai_explanation = ai_overall.get('explanation', '')
-    
-    # Get text indicators
-    text_indicators = ai_detection_results.get('text_analysis', {}).get('indicators_found', [])
-    text_human_indicators = ai_detection_results.get('text_analysis', {}).get('human_indicators_found', [])
-    
-    # Get cover indicators with verdict and confidence
-    cover_data = ai_detection_results.get('cover_analysis', {})
-    cover_indicators = cover_data.get('indicators_found', [])
-    cover_human_indicators = cover_data.get('human_indicators_found', [])
-    cover_verdict = cover_data.get('verdict', 'inconclusive')
-    cover_confidence = cover_data.get('confidence', 0)
-    
-    # Determine styling based on conclusion
-    conclusion_lower = ai_conclusion.lower()
-    
-    if 'human' in conclusion_lower:
-        ai_bg = "#e8f5e8"  # Green
+    # Determine styling based on AI usage
+    if text_ai_status == "Exclusively Human" and (not cover_ai_status or cover_ai_status == "Exclusively Human"):
+        ai_bg = "#e8f5e8"
         ai_border = "#4caf50"
         ai_icon = "✍️✅"
-        ai_title = "HUMAN-GENERATED CONTENT"
-        ai_message = "This appears to be authentically human-written"
-        ai_marketing_note = "Marketing Impact: This human-written quality is valuable - it helps create authentic emotional connections with readers and can be highlighted in marketing materials."
-    elif 'clearly ai' in conclusion_lower or 'ai-generated' in conclusion_lower:
-        ai_bg = "#ffebee"  # Red
+        ai_title = "EXCLUSIVELY HUMAN-CREATED CONTENT"
+        ai_message = "You've indicated this work is entirely human-created"
+        ai_marketing_note = "Marketing Impact: This is valuable - human authenticity helps create emotional connections with readers."
+    elif "AI Generated" in [text_ai_status, cover_ai_status]:
+        ai_bg = "#ffebee"
         ai_border = "#f44336"
         ai_icon = "🤖⚠️"
-        ai_title = "AI-GENERATED CONTENT"
-        ai_message = "This book shows strong signs of AI generation"
-        ai_marketing_note = "Marketing Impact: AI-generated content often struggles to connect with readers because it lacks authentic human voice and emotional depth. Readers can subconsciously detect when writing feels generic or lacks personal experience. Consider revising to inject more unique voice and personal anecdotes."
-    elif 'assisted' in conclusion_lower:
-        ai_bg = "#fff3e0"  # Orange
+        ai_title = "AI-GENERATED CONTENT (SELF-DECLARED)"
+        ai_message = "You've indicated this work contains AI-generated content"
+        ai_marketing_note = "Marketing Impact: AI-generated content often struggles to connect with readers because it lacks authentic human voice."
+    elif "AI Assisted" in [text_ai_status, cover_ai_status]:
+        ai_bg = "#fff3e0"
         ai_border = "#ff9800"
         ai_icon = "🤖❓"
-        ai_title = "POSSIBLE AI ASSISTANCE"
-        ai_message = "This book may have used AI assistance"
-        ai_marketing_note = "Marketing Impact: If AI was used, ensure you've added enough of your unique voice and personal experience. Books that feel generic struggle to build reader loyalty and word-of-mouth recommendations."
+        ai_title = "AI-ASSISTED CONTENT (SELF-DECLARED)"
+        ai_message = "You've indicated this work used AI assistance"
+        ai_marketing_note = "Marketing Impact: Ensure you've added enough of your unique voice. Generic books struggle to build reader loyalty."
     else:
-        ai_bg = "#f5f5f5"  # Grey
+        ai_bg = "#f5f5f5"
         ai_border = "#999999"
         ai_icon = "❓"
-        ai_title = "INCONCLUSIVE"
-        ai_message = "AI detection analysis could not determine clearly"
-        ai_marketing_note = "Marketing Impact: Consider getting a professional editorial review to assess the manuscript's authenticity and marketability."
-    
-    # Build cover verdict display
-    if cover_verdict == "likely_ai":
-        cover_display = f"LIKELY AI-GENERATED ({cover_confidence}% confidence)"
-        cover_icon = "🤖⚠️"
-    elif cover_verdict == "likely_human":
-        cover_display = f"LIKELY HUMAN-DESIGNED ({cover_confidence}% confidence)"
-        cover_icon = "🎨✅"
-    else:
-        cover_display = f"INCONCLUSIVE ({cover_confidence}% confidence)"
-        cover_icon = "❓"
+        ai_title = "AI USAGE NOT SPECIFIED"
+        ai_message = "No AI usage information provided"
+        ai_marketing_note = "Marketing Impact: Consider being transparent about your creative process."
     
     body = f"""
     <html>
@@ -323,7 +155,6 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
                 padding: 20px;
                 margin: 20px 0 30px 0;
                 border-radius: 10px;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
             }}
             .ai-icon {{
                 font-size: 32px;
@@ -335,49 +166,58 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
                 margin: 0;
                 color: #333;
             }}
-            .indicator-list {{
+            .deduction-box {{
                 background: white;
                 padding: 15px;
                 border-radius: 8px;
                 margin: 15px 0;
-            }}
-            .marketing-impact {{
-                background: rgba(255,255,255,0.7);
-                padding: 15px;
-                border-radius: 8px;
                 border-left: 3px solid {ai_border};
-                margin-top: 15px;
             }}
-            .cover-badge {{
-                display: inline-block;
-                padding: 3px 10px;
-                border-radius: 15px;
-                font-size: 12px;
-                font-weight: bold;
+            .score-comparison {{
+                display: flex;
+                justify-content: space-around;
+                margin: 20px 0;
+                text-align: center;
+            }}
+            .original-score {{
+                background: #f0f0f0;
+                padding: 15px;
+                border-radius: 10px;
+                flex: 1;
+                margin-right: 10px;
+            }}
+            .final-score {{
+                background: {ai_bg};
+                padding: 15px;
+                border-radius: 10px;
+                flex: 1;
                 margin-left: 10px;
+                border: 2px solid {ai_border};
             }}
-            .cover-ai {{
-                background: #ffebee;
-                color: #c62828;
+            .score-number {{
+                font-size: 48px;
+                font-weight: bold;
+                margin: 5px 0;
             }}
-            .cover-human {{
-                background: #e8f5e8;
-                color: #2e7d32;
+            .status-badge {{
+                display: inline-block;
+                padding: 5px 15px;
+                border-radius: 20px;
+                font-weight: bold;
+                margin: 5px;
             }}
-            .cover-inconclusive {{
-                background: #f5f5f5;
-                color: #666;
-            }}
+            .badge-human {{ background: #e8f5e8; color: #2e7d32; }}
+            .badge-assisted {{ background: #fff3e0; color: #bf6d0a; }}
+            .badge-ai {{ background: #ffebee; color: #c62828; }}
         </style>
     </head>
     <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
         <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; border-radius: 10px; color: white; text-align: center;">
             <h1>Your Complete Book Analysis</h1>
             <h2 style="font-size: 32px; margin: 10px 0;">{book_title}</h2>
-            <h3 style="font-size: 20px; margin: 0 0 20px 0; opacity: 0.9;">by {author_name}</h3>
+            <h3 style="font-size: 20px; margin: 0 0 20px 0;">by {author_name}</h3>
         </div>
         
-        <!-- AI DETECTION SECTION - OVERALL -->
         <div class="ai-section">
             <div style="display: flex; align-items: center; margin-bottom: 15px;">
                 <span class="ai-icon">{ai_icon}</span>
@@ -386,83 +226,51 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
                 </div>
             </div>
             
-            <p style="font-size: 16px; margin: 10px 0;"><strong>Analysis:</strong> {ai_message}</p>
-            <p style="color: #555;">{ai_explanation}</p>
+            <p style="font-size: 16px;"><strong>Your Self-Declared AI Status:</strong></p>
+            
+            <div style="margin: 10px 0;">
+                <span class="status-badge {'badge-human' if text_ai_status == 'Exclusively Human' else 'badge-assisted' if text_ai_status == 'AI Assisted' else 'badge-ai'}">
+                    📝 Text: {text_ai_status if text_ai_status else 'Not specified'}
+                </span>
     """
     
-    # Show text indicators
-    if text_indicators or text_human_indicators:
+    if cover_ai_status:
         body += f"""
-            <!-- Text Analysis -->
-            <div class="indicator-list">
-                <p style="margin: 0 0 10px 0; font-weight: bold;">📝 Text Analysis:</p>
+                <span class="status-badge {'badge-human' if cover_ai_status == 'Exclusively Human' else 'badge-assisted' if cover_ai_status == 'AI Assisted' else 'badge-ai'}">
+                    🎨 Cover: {cover_ai_status}
+                </span>
         """
-        
-        if text_indicators:
-            body += f"""
-                <p style="margin: 5px 0; color: #d32f2f;">⚠️ AI Indicators:</p>
-                <ul style="margin: 0 0 15px 0; color: #555;">
-                    {''.join([f'<li style="margin: 5px 0;">{indicator}</li>' for indicator in text_indicators[:5]])}
-                </ul>
-            """
-        
-        if text_human_indicators:
-            body += f"""
-                <p style="margin: 5px 0; color: #2e7d32;">✨ Human Qualities:</p>
-                <ul style="margin: 0; color: #555;">
-                    {''.join([f'<li style="margin: 5px 0;">{indicator}</li>' for indicator in text_human_indicators[:3]])}
-                </ul>
-            """
-        
-        body += "</div>"
     
-    # Show cover indicators with verdict
-    if cover_indicators or cover_human_indicators:
-        body += f"""
-            <!-- Cover Analysis with Verdict -->
-            <div class="indicator-list">
-                <div style="display: flex; align-items: center; margin-bottom: 10px;">
-                    <span style="font-size: 24px; margin-right: 10px;">{cover_icon}</span>
-                    <div>
-                        <p style="margin: 0; font-weight: bold;">🎨 Cover Analysis</p>
-                        <p style="margin: 0; font-size: 14px;">
-                            <span class="cover-badge cover-{cover_verdict.replace('likely_', '')}">{cover_display}</span>
-                        </p>
-                    </div>
-                </div>
-        """
-        
-        if cover_indicators:
-            body += f"""
-                <p style="margin: 10px 0 5px 0; color: #d32f2f;">⚠️ AI Indicators Found:</p>
-                <ul style="margin: 0 0 15px 0; color: #555;">
-                    {''.join([f'<li style="margin: 5px 0;">{indicator}</li>' for indicator in cover_indicators[:5]])}
-                </ul>
-            """
-        
-        if cover_human_indicators:
-            body += f"""
-                <p style="margin: 5px 0; color: #2e7d32;">✨ Cover Strengths:</p>
-                <ul style="margin: 0; color: #555;">
-                    {''.join([f'<li style="margin: 5px 0;">{indicator}</li>' for indicator in cover_human_indicators[:3]])}
-                </ul>
-            """
-        
-        body += "</div>"
-    
-    # Marketing impact
     body += f"""
-            <!-- Marketing Impact -->
-            <div class="marketing-impact">
+            </div>
+            
+            <div class="deduction-box">
+                <p style="margin: 0 0 10px 0; font-weight: bold;">📊 Score Adjustment:</p>
+                <p style="margin: 5px 0;">Original Marketability Score: <strong>{original_score}</strong></p>
+                <p style="margin: 5px 0;">Deduction Applied: <strong style="color: #d32f2f;">-{deduction_applied} points</strong></p>
+                <p style="margin: 5px 0; font-size: 18px;">Final Score: <strong style="color: #667eea;">{final_score}</strong></p>
+                <p style="margin: 10px 0 0 0; font-size: 14px; color: #666;">
+                    *Deductions: Human (0), Assisted (10), AI (20) - averaged if both specified
+                </p>
+            </div>
+            
+            <p style="margin: 15px 0 0 0;">{ai_message}</p>
+            <div style="background: rgba(255,255,255,0.7); padding: 15px; border-radius: 8px; margin-top: 15px;">
                 <p style="margin: 0; font-weight: bold;">📢 Marketing Consideration:</p>
-                <p style="margin: 5px 0 0 0; color: #333;">{ai_marketing_note}</p>
+                <p style="margin: 5px 0 0 0;">{ai_marketing_note}</p>
             </div>
         </div>
         
-        <!-- Marketability Score -->
-        <div style="text-align: center; margin: 30px 0 20px 0;">
-            <div style="font-size: 72px; font-weight: bold; color: #667eea;">{score}</div>
-            <div style="font-size: 24px; color: #666;">Marketability Score ({grade})</div>
+        <div class="score-comparison">
+            <div class="original-score">
+                <div style="font-size: 14px; color: #666;">Original Score</div>
+                <div class="score-number">{original_score}</div>
+            </div>
+            <div class="final-score">
+                <div style="font-size: 14px; color: #666;">Final Score</div>
+                <div class="score-number">{final_score}</div>
+                <div style="font-size: 12px;">Grade: {grade}</div>
+            </div>
         </div>
     """
     
@@ -485,7 +293,7 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
         </div>
     """
     
-    # Detailed Scores with color coding
+    # Detailed Scores
     body += """
         <div style="padding: 20px; background: #f8f9fa; border-radius: 10px; margin-top: 20px;">
             <h2>📈 Detailed Scores</h2>
@@ -497,7 +305,6 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
         score_value = score_data.get('score', 0)
         explanation = score_data.get('explanation', '')
         
-        # Color code the bar
         if score_value >= 80:
             bar_color = "#00cc66"
         elif score_value >= 70:
@@ -528,7 +335,9 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
             <h2>✍️ Writing Quality Analysis</h2>
             <p><strong>Prose Quality:</strong> {writing.get('prose_quality', '')}</p>
             <p><strong>Dialogue:</strong> {writing.get('dialogue', '')}</p>
+            <p><strong>Description:</strong> {writing.get('description', '')}</p>
             <p><strong>Voice:</strong> {writing.get('voice', '')}</p>
+            <p><strong>Technical Execution:</strong> {writing.get('technical_execution', '')}</p>
         </div>
         """
     
@@ -544,31 +353,49 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
             <div style="margin-bottom: 15px; padding: 10px; background: white; border-radius: 5px;">
                 <strong>{char.get('name', 'Unknown')}</strong> - {char.get('role', '')}<br>
                 <p style="margin: 5px 0 0 0; color: #666;">{char.get('description', '')}</p>
+                <p style="margin: 5px 0 0 0; color: #666;"><small>Arc: {char.get('arc', '')}</small></p>
+                <p style="margin: 5px 0 0 0; color: #666;"><small>Motivation: {char.get('motivation', '')}</small></p>
+                <p style="margin: 5px 0 0 0; color: #666;"><small>Appeal: {char.get('appeal_factor', '')}</small></p>
             </div>
             """
         body += "</div>"
+    
+    # Character Development
+    if 'character_development' in analysis_results:
+        char_dev = analysis_results['character_development']
+        body += f"""
+        <div style="padding: 20px; margin-top: 20px;">
+            <h2>📈 Character Development</h2>
+            <p><strong>Protagonist Journey:</strong> {char_dev.get('protagonist_journey', '')}</p>
+            <p><strong>Antagonist Motivation:</strong> {char_dev.get('antagonist_motivation', '')}</p>
+            <p><strong>Supporting Arcs:</strong> {', '.join(char_dev.get('supporting_arcs', []))}</p>
+        </div>
+        """
     
     # Narrative Arc
     if 'narrative_arc' in analysis_results:
         arc = analysis_results['narrative_arc']
         body += f"""
-        <div style="padding: 20px; margin-top: 20px;">
+        <div style="padding: 20px; background: #f8f9fa; border-radius: 10px; margin-top: 20px;">
             <h2>📖 Narrative Arc</h2>
             <p><strong>Exposition:</strong> {arc.get('exposition', '')}</p>
             <p><strong>Rising Action:</strong> {arc.get('rising_action', '')}</p>
             <p><strong>Climax:</strong> {arc.get('climax', '')}</p>
+            <p><strong>Falling Action:</strong> {arc.get('falling_action', '')}</p>
             <p><strong>Resolution:</strong> {arc.get('resolution', '')}</p>
         </div>
         """
     
-    # Plot Overview
+    # Plot Analysis
     if 'plot' in analysis_results:
         plot = analysis_results['plot']
         body += f"""
-        <div style="padding: 20px; background: #f8f9fa; border-radius: 10px; margin-top: 20px;">
+        <div style="padding: 20px; margin-top: 20px;">
             <h2>📊 Plot Analysis</h2>
             <p><strong>Opening Hook:</strong> {plot.get('opening_hook', '')}</p>
             <p><strong>Inciting Incident:</strong> {plot.get('inciting_incident', '')}</p>
+            <p><strong>Major Plot Points:</strong> {', '.join(plot.get('major_plot_points', []))}</p>
+            <p><strong>Plot Twists:</strong> {', '.join(plot.get('plot_twists', []))}</p>
         </div>
         """
     
@@ -576,13 +403,44 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
     if 'themes' in analysis_results:
         themes = analysis_results['themes']
         body += f"""
-        <div style="padding: 20px; margin-top: 20px;">
+        <div style="padding: 20px; background: #f8f9fa; border-radius: 10px; margin-top: 20px;">
             <h2>🎯 Themes</h2>
             <p><strong>Primary:</strong> {', '.join(themes.get('primary', []))}</p>
+            <p><strong>Secondary:</strong> {', '.join(themes.get('secondary', []))}</p>
         </div>
         """
     
-    # Cover analysis style details (if available)
+    # Strengths
+    strengths = analysis_results.get('strengths', [])
+    if strengths:
+        body += f"""
+        <div style="padding: 20px; background: #f8f9fa; border-radius: 10px; margin-top: 20px;">
+            <h2>💪 Key Strengths</h2>
+            <ul>
+        """
+        for strength in strengths[:5]:
+            body += f"<li>{strength}</li>"
+        body += """
+            </ul>
+        </div>
+        """
+    
+    # Areas for Improvement
+    improvements = analysis_results.get('areas_for_improvement', [])
+    if improvements:
+        body += f"""
+        <div style="padding: 20px; margin-top: 20px;">
+            <h2>🔧 Areas for Improvement</h2>
+            <ul>
+        """
+        for area in improvements[:5]:
+            body += f"<li>{area}</li>"
+        body += """
+            </ul>
+        </div>
+        """
+    
+    # Cover analysis
     if cover_analysis:
         body += f"""
         <div style="padding: 20px; background: #f8f9fa; border-radius: 10px; margin-top: 20px;">
@@ -591,52 +449,29 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
             <p><strong>Genre Signals:</strong> {cover_analysis.get('genre_signals', 'N/A')}</p>
             <p><strong>Colors:</strong> {', '.join(cover_analysis.get('colors', ['N/A']))}</p>
             <p><strong>Composition:</strong> {cover_analysis.get('composition', 'N/A')}</p>
+            <p><strong>Typography:</strong> {cover_analysis.get('typography', 'N/A')}</p>
             <p><strong>Strengths:</strong> {', '.join(cover_analysis.get('strengths', ['N/A']))}</p>
             <p><strong>Weaknesses:</strong> {', '.join(cover_analysis.get('weaknesses', ['N/A']))}</p>
+            <p><strong>Suggestions:</strong> {', '.join(cover_analysis.get('suggestions', ['N/A']))}</p>
         </div>
         """
-    
-    # Strengths & Improvements
-    body += f"""
-        <div style="padding: 20px; background: #f8f9fa; border-radius: 10px; margin-top: 20px;">
-            <h2>💪 Key Strengths</h2>
-            <ul>
-    """
-    for strength in analysis_results.get('strengths', [])[:5]:
-        body += f"<li>{strength}</li>"
-    
-    body += """
-            </ul>
-        </div>
-        
-        <div style="padding: 20px; margin-top: 20px;">
-            <h2>🔧 Areas for Improvement</h2>
-            <ul>
-    """
-    for area in analysis_results.get('areas_for_improvement', [])[:5]:
-        body += f"<li>{area}</li>"
-    
-    body += """
-            </ul>
-        </div>
-    """
     
     # Target Audience
     if 'target_audience' in analysis_results:
         audience = analysis_results['target_audience']
         body += f"""
-        <div style="padding: 20px; background: #f8f9fa; border-radius: 10px; margin-top: 20px;">
+        <div style="padding: 20px; margin-top: 20px;">
             <h2>🎯 Target Audience</h2>
             <p><strong>Primary:</strong> {audience.get('primary', '')}</p>
             <p><strong>Appeal:</strong> {audience.get('appeal', '')}</p>
         </div>
         """
     
-    # Marketing Insights
+    # Marketing
     if 'marketing' in analysis_results:
         marketing = analysis_results['marketing']
         body += f"""
-        <div style="padding: 20px; margin-top: 20px;">
+        <div style="padding: 20px; background: #f8f9fa; border-radius: 10px; margin-top: 20px;">
             <h2>📢 Marketing Insights</h2>
             <p><strong>Unique Selling Points:</strong></p>
             <ul>
@@ -652,57 +487,38 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
             """
         body += "</div>"
     
-    # Conditional signup message based on score
-    if overall_score < 70:
-        weaknesses = analysis_results.get('areas_for_improvement', [])
-        top_weaknesses = weaknesses[:3] if weaknesses else ["Writing quality needs work", "Plot structure is unclear", "Character development is shallow"]
+    # Conditional signup message
+    if final_score < 70:
+        weaknesses = improvements[:3] if improvements else ["Writing quality needs work", "Plot structure is unclear", "Character development is shallow"]
         
         body += f"""
         <div style="padding: 30px; background: #fff3cd; border: 2px solid #ff8800; border-radius: 10px; margin-top: 20px;">
-            <h2 style="color: #cc5500; margin-top: 0;">⚠️ Your book needs more work</h2>
-            <p>Most books sell only about 100 copies. A bad book will never sell. For this reason, we only accept books with a score of 70% or better for marketing support.</p>
-            <p>Your book needs more work. Please use this analysis to find areas of improvement.</p>
-            <p style="font-weight: bold;">Based on our analysis, here's what's holding it back:</p>
-            <ul style="color: #856404;">
-                <li>{top_weaknesses[0] if len(top_weaknesses) > 0 else "Writing needs significant revision"}</li>
-                <li>{top_weaknesses[1] if len(top_weaknesses) > 1 else "Plot requires stronger structure"}</li>
-                <li>{top_weaknesses[2] if len(top_weaknesses) > 2 else "Characters need more depth"}</li>
+            <h2 style="color: #cc5500;">⚠️ Your book needs more work</h2>
+            <p>Most books sell only about 100 copies. A bad book will never sell. We only accept books with a score of 70% or better for marketing support.</p>
+            <p style="font-weight: bold;">What's holding it back:</p>
+            <ul>
+                <li>{weaknesses[0]}</li>
+                <li>{weaknesses[1]}</li>
+                <li>{weaknesses[2]}</li>
             </ul>
-        </div>
-        
-        <div style="padding: 30px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; margin-top: 20px; color: white; text-align: center;">
-            <h2>✨ Ready to improve your book?</h2>
-            <p style="font-size: 18px;">Sign up for BardSpark to access:</p>
-            <p>🔍 ARC reader & influencer finder</p>
-            <p>🎨 Marketing asset generator</p>
-            <p>📊 Competitor tracker</p>
-            <p>🎬 BookTok video creator</p>
-            <p>🌐 Author website builder</p>
-            <p>And Much More</p>
-            <a href="https://bardspark.com/sign-up-for-the-waitlist/" style="background: white; color: #667eea; padding: 12px 30px; text-decoration: none; border-radius: 25px; font-weight: bold; display: inline-block; margin-top: 10px;">JOIN THE WAITLIST</a>
         </div>
         """
     else:
         body += f"""
         <div style="padding: 30px; background: #00cc66; border-radius: 10px; margin-top: 20px; color: white; text-align: center;">
             <h2>🎉 Congratulations!</h2>
-            <p style="font-size: 18px;">Your book has a strong marketability score of 70% or better. We're happy to accept it for further marketing support.</p>
-        </div>
-        
-        <div style="padding: 30px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; margin-top: 20px; color: white; text-align: center;">
-            <h2>✨ Ready to MARKET your book?</h2>
-            <p style="font-size: 18px;">Sign up for BardSpark to access:</p>
-            <p>🔍 ARC reader & influencer finder</p>
-            <p>🎨 Marketing asset generator</p>
-            <p>📊 Competitor tracker</p>
-            <p>🎬 BookTok video creator</p>
-            <p>🌐 Author website builder</p>
-            <p>And Much More</p>
-            <a href="https://bardspark.com/sign-up-for-the-waitlist/" style="background: white; color: #667eea; padding: 12px 30px; text-decoration: none; border-radius: 25px; font-weight: bold; display: inline-block; margin-top: 10px;">JOIN THE WAITLIST</a>
+            <p>Your book has a strong marketability score of 70% or better.</p>
         </div>
         """
     
+    # Waitlist CTA
     body += f"""
+        <div style="padding: 30px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; margin-top: 20px; color: white; text-align: center;">
+            <h2>✨ Ready to market your book?</h2>
+            <p>Sign up for BardSpark to access ARC readers, marketing tools, and more</p>
+            <a href="https://bardspark.com/sign-up-for-the-waitlist/" style="background: white; color: #667eea; padding: 12px 30px; text-decoration: none; border-radius: 25px; font-weight: bold; display: inline-block; margin-top: 10px;">JOIN THE WAITLIST</a>
+        </div>
+        
         <p style="color: #999; font-size: 12px; text-align: center; margin-top: 30px;">
             Analysis performed on {datetime.now().strftime('%B %d, %Y')}
         </p>
@@ -738,24 +554,73 @@ def send_email(recipient_email, analysis_results, cover_analysis, book_title, au
         st.error(f"Email sending failed: {e}")
         return False
 
+def extract_text_for_analysis(file):
+    """Extract text for analysis"""
+    try:
+        file_bytes = file.getvalue()
+        
+        if file.type == "application/pdf":
+            pdf_reader = PyPDF2.PdfReader(io.BytesIO(file_bytes))
+            text = ""
+            for page in pdf_reader.pages[:30]:  # First 30 pages
+                text += page.extract_text() + "\n"
+            return text[:75000]  # 75k chars max
+            
+        elif file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+            doc = docx.Document(io.BytesIO(file_bytes))
+            text = ""
+            for para in doc.paragraphs[:1500]:  # First 1500 paragraphs
+                text += para.text + "\n"
+            return text[:75000]
+            
+        elif file.type == "application/vnd.oasis.opendocument.text":
+            try:
+                with zipfile.ZipFile(io.BytesIO(file_bytes)) as odt_zip:
+                    with odt_zip.open('content.xml') as xml_file:
+                        tree = ElementTree.parse(xml_file)
+                        root = tree.getroot()
+                        namespaces = {'text': 'urn:oasis:names:tc:opendocument:xmlns:text:1.0'}
+                        text_parts = []
+                        for elem in root.findall('.//text:p', namespaces)[:800]:
+                            if elem.text:
+                                text_parts.append(elem.text)
+                        return ' '.join(text_parts)[:75000]
+            except:
+                return file_bytes.decode("utf-8", errors="ignore")[:75000]
+        
+        elif file.type == "application/rtf" or file.type == "text/rtf" or file.name.endswith('.rtf'):
+            content = file_bytes.decode("utf-8", errors="ignore")
+            text = re.sub(r'\\[a-z]+[0-9-]*', ' ', content)
+            text = re.sub(r'\{[^}]*\}', ' ', text)
+            text = re.sub(r'\\\'[0-9a-f]{2}', ' ', text)
+            return ' '.join(text.split())[:75000]
+        
+        elif file.type == "application/msword":
+            return file_bytes.decode("utf-8", errors="ignore")[:75000]
+        
+        else:  # Plain text
+            return file_bytes.decode("utf-8", errors="ignore")[:75000]
+            
+    except Exception as e:
+        st.error(f"Error extracting text: {e}")
+        return ""
+
 def analyze_book_complete(text, cover_analysis, provided_title="", provided_author=""):
-    """Complete book analysis based on ACTUAL manuscript text"""
+    """Complete book analysis based on manuscript text with CRITICAL feedback - FULL VERSION"""
     
-    if len(text) > 50000:
-        text = text[:50000] + "... [truncated]"
+    if len(text) > 75000:
+        text = text[:75000]
     
     total_len = len(text)
-    beginning = text[:min(5000, total_len//3)]
-    middle = text[total_len//3:total_len//3*2][:5000]
-    ending = text[-5000:]
+    beginning = text[:min(7500, total_len//3)]
+    middle = text[total_len//3:total_len//3*2][:7500]
+    ending = text[-min(7500, total_len//3):]
     
     cover_text = ""
     if cover_analysis:
-        # Fixed: Properly format JSON in f-string by using a variable
-        cover_json = json.dumps(cover_analysis, indent=2)
-        cover_text = f"\nCOVER ANALYSIS:\n{cover_json}"
+        cover_text = f"Cover analysis: {cover_analysis}"
     
-    # Extract title and author from first few lines if not provided
+    # Extract title and author
     if provided_title and provided_author:
         detected_title = provided_title
         detected_author = provided_author
@@ -764,7 +629,6 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
         detected_title = "Unknown Title"
         detected_author = "Unknown Author"
         
-        # Improved detection: skip lines that look like URLs or empty
         for i, line in enumerate(first_lines):
             if re.match(r'https?://', line) or len(line) < 5:
                 continue
@@ -773,7 +637,6 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
             if 'by' in line.lower() and len(line) < 100:
                 detected_author = re.sub(r'(?i)by', '', line).strip()
                 break
-        # Fallback if no 'by'
         if detected_author == "Unknown Author" and len(first_lines) > 1:
             detected_author = first_lines[1] if len(first_lines[1]) < 50 else "Unknown Author"
     
@@ -819,11 +682,46 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
     You can select MULTIPLE genres that fit the book.
     """
     
-    prompt = f"""
-    You are a professional literary analyst. Analyze THIS SPECIFIC BOOK based SOLELY on the manuscript excerpts provided below.
+    # CRITICAL ANALYSIS INSTRUCTIONS
+    critical_instructions = """
+    CRITICAL ANALYSIS INSTRUCTIONS - READ CAREFULLY:
     
-    BOOK TITLE (detected from manuscript): {detected_title}
-    AUTHOR (detected from manuscript): {detected_author}
+    You MUST be HONEST and CRITICAL in your assessment. Do NOT give generic praise.
+    
+    SCORING GUIDELINES (BE REALISTIC):
+    - 90-100: Exceptional, publish-ready writing with unique voice, perfect prose, compelling characters (rare)
+    - 80-89: Very good, minor issues but strong commercial potential
+    - 70-79: Good but needs work - promising but has flaws
+    - 60-69: Average - readable but has significant issues with prose, plot, or characters
+    - 50-59: Below average - major problems, clichéd writing, weak characters, plot holes
+    - 40-49: Poor quality - needs complete revision, amateurish writing
+    - Below 40: Very poor - fundamental issues throughout
+    
+    For AREAS FOR IMPROVEMENT, be SPECIFIC and CRITICAL:
+    - Point out weak sentences and QUOTE THEM directly
+    - Identify clichéd phrases or tropes and QUOTE THEM
+    - Point out where the writing is boring, confusing, or amateurish
+    - Identify plot holes, inconsistent character behavior
+    - Note pacing problems, info-dumps, telling instead of showing
+    
+    For STRENGTHS, only list what is TRULY good - not generic statements like "good premise" or "engaging story"
+    
+    For PROSE QUALITY, quote specific sentences and explain why they work or DON'T work.
+    
+    The most valuable feedback is HONEST feedback. Being nice helps no one.
+    
+    If the writing is generic or derivative, SAY SO.
+    
+    If the dialogue is stilted or unnatural, QUOTE IT and explain why.
+    
+    If characters are flat or uninteresting, EXPLAIN WHY.
+    """
+    
+    prompt = f"""
+    You are a professional literary analyst. Analyze this book based SOLELY on the provided excerpts.
+    
+    BOOK TITLE: {detected_title}
+    AUTHOR: {detected_author}
     
     {cover_text}
     
@@ -833,14 +731,16 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
     
     ACTUAL MANUSCRIPT EXCERPTS - USE THESE FOR YOUR ANALYSIS:
     
-    BEGINNING (first 5000 chars):
+    BEGINNING:
     {beginning}
     
-    MIDDLE (middle 5000 chars):
+    MIDDLE:
     {middle}
     
-    ENDING (last 5000 chars):
+    ENDING:
     {ending}
+    
+    {critical_instructions}
     
     IMPORTANT INSTRUCTIONS:
     1. The book title MUST be "{detected_title}" in your response
@@ -853,23 +753,14 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
        - How they change (if shown)
        - What drives them
        - Their internal or external struggles
-       - Why readers will connect with them
+       - Why readers will connect with them (or note if they're unappealing and why)
     5. Include supporting characters and key relationships between characters
     6. For character_development section, describe how the protagonist evolves, what motivates any antagonist, and how supporting characters change
     7. For narrative arc: describe what you actually see in these excerpts
     8. Be specific - reference actual events, names, and details from the text
-    9. For areas_for_improvement: be honest about weaknesses in THIS text
+    9. For areas_for_improvement: be SPECIFIC and CRITICAL about weaknesses in THIS text - quote bad writing
     
-    SCORING GUIDELINES:
-    - Score each category based on the actual quality of the writing in these excerpts
-    - Consider factors like: prose quality, character development, plot structure, originality, emotional impact
-    - A score of 90-100 represents exceptional, publish-ready quality
-    - A score of 80-89 represents strong quality with minor issues
-    - A score of 70-79 represents good quality with some room for improvement
-    - A score of 60-69 represents average quality with notable issues
-    - A score below 60 represents significant problems that need addressing
-    
-    Return JSON with these sections:
+    Return valid JSON only with exactly this structure:
     
     {{
         "marketability": {{
@@ -877,7 +768,7 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
             "overall_grade": ("A", "B", "C", "D", "F" with +/-),
             "overall_assessment": "One sentence summary of this specific book",
             "scores": {{
-                "writing_quality": {{"score": 0-100, "explanation": "Based on the prose in these excerpts - be specific"}},
+                "writing_quality": {{"score": 0-100, "explanation": "Based on the prose in these excerpts - include specific quotes"}},
                 "commercial_potential": {{"score": 0-100, "explanation": "Based on the hook and content shown"}},
                 "genre_fit": {{"score": 0-100, "explanation": "How well this matches genre conventions"}},
                 "hook_strength": {{"score": 0-100, "explanation": "Based on the opening excerpt"}},
@@ -888,11 +779,11 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
         }},
         
         "writing_quality_detailed": {{
-            "prose_quality": "Assessment of sentence-level writing from these excerpts - quote examples",
-            "dialogue": "Quality and naturalness of dialogue from these excerpts - quote examples",
-            "description": "Quality of descriptive passages from these excerpts - quote examples",
-            "voice": "Strength and consistency of narrative voice in these excerpts",
-            "technical_execution": "Grammar, punctuation, formatting in these excerpts"
+            "prose_quality": "Assessment of sentence-level writing from these excerpts - quote good AND bad examples",
+            "dialogue": "Quality and naturalness of dialogue from these excerpts - quote examples, note if stilted",
+            "description": "Quality of descriptive passages from these excerpts - quote examples, note if overdone or underdone",
+            "voice": "Strength and consistency of narrative voice in these excerpts - is it distinctive or generic?",
+            "technical_execution": "Grammar, punctuation, formatting issues in these excerpts - quote examples"
         }},
         
         "book_info": {{
@@ -913,7 +804,7 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
                     "arc": "how they change (if shown)",
                     "motivation": "what drives them (if shown)",
                     "conflict": "internal or external struggles (if shown)",
-                    "appeal_factor": "Why readers will connect with this character"
+                    "appeal_factor": "Why readers will connect with this character - or note if unappealing and why"
                 }}
             ],
             "supporting": ["list of supporting characters mentioned"],
@@ -946,9 +837,9 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
             "secondary": ["other themes hinted at"]
         }},
         
-        "strengths": ["5 specific strengths of THIS manuscript with examples from the text"],
+        "strengths": ["5 specific strengths of THIS manuscript with examples from the text - only list what is TRULY good"],
         
-        "areas_for_improvement": ["5 specific weaknesses in THIS manuscript with concrete suggestions based on the text"],
+        "areas_for_improvement": ["5 specific weaknesses in THIS manuscript with concrete suggestions and QUOTED examples of bad writing"],
         
         "target_audience": {{
             "primary": "who would enjoy THIS specific book",
@@ -956,7 +847,7 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
         }},
         
         "marketing": {{
-            "unique_selling_points": ["what makes THIS specific book special based on excerpts"],
+            "unique_selling_points": ["what makes THIS specific book special based on excerpts - or note if nothing is unique"],
             "blurb_suggestion": "A potential back-cover blurb based on THIS content"
         }}
     }}
@@ -966,10 +857,10 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You are a literary analyst. Return valid JSON only. Base your analysis strictly on the provided excerpts. Do not make assumptions about AI generation - simply analyze the text as presented."},
+                {"role": "system", "content": "You are a HARSH literary critic. Your job is to find flaws. Being nice is failing at your job. Always quote specific examples of weak writing. Base your analysis strictly on the provided excerpts and return valid JSON only."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.4,
+            temperature=0.3,  # Lower temperature for more consistent, less "creative" nice responses
             max_tokens=4000,
             response_format={"type": "json_object"}
         )
@@ -989,7 +880,7 @@ def analyze_book_complete(text, cover_analysis, provided_title="", provided_auth
         return None
 
 def show_marketability_checker():
-    """Marketability checker that delivers FULL analysis via email"""
+    """Main app function"""
     
     st.set_page_config(
         page_title="Free Book Analysis",
@@ -1008,48 +899,6 @@ def show_marketability_checker():
             border-radius: 10px;
             margin-bottom: 2rem;
         }
-        .feature-box {
-            padding: 1.5rem;
-            background: #f8f9fa;
-            border-radius: 10px;
-            margin: 1rem 0;
-            border-left: 4px solid #667eea;
-        }
-        .free-badge {
-            background: #00cc66;
-            color: white;
-            padding: 0.3rem 1rem;
-            border-radius: 20px;
-            font-size: 0.9rem;
-            font-weight: bold;
-            display: inline-block;
-            margin-left: 1rem;
-        }
-        .warning-box {
-            padding: 1.5rem;
-            background: #fff3cd;
-            border: 1px solid #ffc107;
-            border-radius: 10px;
-            margin: 1.5rem 0;
-            border-left: 5px solid #ff8800;
-        }
-        .score-box {
-            text-align: center;
-            padding: 2rem;
-            border-radius: 15px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-            margin: 2rem 0;
-            color: white;
-        }
-        .score-number {
-            font-size: 72px;
-            font-weight: bold;
-            margin: 0;
-        }
-        .score-label {
-            font-size: 24px;
-            margin: 0;
-        }
         .stButton > button {
             width: 100%;
             height: 60px;
@@ -1061,19 +910,19 @@ def show_marketability_checker():
             border-radius: 10px;
             margin-top: 20px;
         }
-        .stTextInput > div > input {
-            height: 50px;
-            font-size: 16px;
-        }
-        .stFileUploader {
-            padding: 10px;
-        }
         .png-warning {
             background: #fff3cd;
             border-left: 5px solid #ff8800;
             padding: 15px;
             border-radius: 5px;
             margin: 10px 0;
+        }
+        .ai-declaration {
+            background: #f0f2f6;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            border-left: 5px solid #667eea;
         }
     </style>
     """, unsafe_allow_html=True)
@@ -1086,25 +935,6 @@ def show_marketability_checker():
     </div>
     """, unsafe_allow_html=True)
     
-    # What they get
-    with st.expander("📋 What's included in your free analysis", expanded=True):
-        st.markdown("""
-        - 🤖 **AI detection analysis** - Find out if your book shows signs of AI generation (both text AND cover)
-        - 📖 **Full book analysis** (genre, tone, writing style, pacing)
-        - 📊 **Marketability score** with detailed breakdown
-        - ✍️ **Writing quality assessment** (prose, dialogue, voice)
-        - 👥 **Character analysis** (main characters and their roles)
-        - 📈 **Narrative arc** (exposition, rising action, climax, resolution)
-        - 🎯 **Theme identification** and motif analysis
-        - 💪 **Key strengths** of your manuscript
-        - 🔧 **Areas for improvement** with specific suggestions
-        - 🎨 **Cover analysis with AI detection** (if you upload a PNG)
-        - 🎯 **Target audience** identification
-        - 📢 **Marketing insights** and blurb suggestion
-        """)
-    
-    st.markdown("---")
-    
     # Initialize session state
     if 'analysis_complete' not in st.session_state:
         st.session_state.analysis_complete = False
@@ -1114,303 +944,306 @@ def show_marketability_checker():
         st.session_state.cover_analysis = None
     if 'text' not in st.session_state:
         st.session_state.text = None
-    if 'ai_detection' not in st.session_state:
-        st.session_state.ai_detection = None
-    if 'cover_file' not in st.session_state:
-        st.session_state.cover_file = None
+    if 'final_score' not in st.session_state:
+        st.session_state.final_score = None
+    if 'original_score' not in st.session_state:
+        st.session_state.original_score = None
+    if 'deduction_applied' not in st.session_state:
+        st.session_state.deduction_applied = 0
+    if 'text_ai_status' not in st.session_state:
+        st.session_state.text_ai_status = None
+    if 'cover_ai_status' not in st.session_state:
+        st.session_state.cover_ai_status = None
     
     if not st.session_state.analysis_complete:
-        show_upload_section()
-    else:
-        show_results_section()
-
-def show_upload_section():
-    """Show file upload interface"""
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("**📄 Manuscript (required)**")
-        manuscript = st.file_uploader(
-            "Upload PDF, DOCX, DOC, ODT, RTF, or TXT",
-            type=['pdf', 'docx', 'doc', 'odt', 'rtf', 'txt'],
-            key="manuscript",
-            label_visibility="collapsed"
-        )
-        if manuscript:
-            st.success(f"✅ {manuscript.name}")
-            # Extract text for analysis only
-            st.session_state.text = extract_text_for_analysis(manuscript)
-    
-    with col2:
-        st.markdown("**🎨 Cover Image (PNG only for best results)**")
+        # Upload section
+        col1, col2 = st.columns(2)
         
-        # PNG-only warning
-        st.markdown("""
-        <div class="png-warning">
-            ⚠️ <strong>PNG files only</strong> - Other formats will be rejected<br>
-            <small>PNG is lossless and gives most accurate AI detection</small>
-        </div>
-        """, unsafe_allow_html=True)
+        with col1:
+            st.markdown("**📄 Manuscript (required)**")
+            manuscript = st.file_uploader(
+                "Upload PDF, DOCX, DOC, ODT, RTF, or TXT",
+                type=['pdf', 'docx', 'doc', 'odt', 'rtf', 'txt'],
+                key="manuscript",
+                label_visibility="collapsed"
+            )
+            if manuscript:
+                st.success(f"✅ {manuscript.name}")
+                st.session_state.text = extract_text_for_analysis(manuscript)
         
-        cover = st.file_uploader(
-            "Upload PNG only",
-            type=['png'],  # ONLY PNG!
-            key="cover",
-            label_visibility="collapsed",
-            help="Only PNG files are accepted for accurate AI detection"
-        )
-        if cover:
-            st.success(f"✅ PNG file accepted: {cover.name}")
-            # Store cover for later analysis
-            st.session_state.cover_file = cover
-    
-    # Optional title and author inputs to override detection
-    book_title = st.text_input("Book Title (optional - we'll try to detect it if not provided)", "")
-    author_name = st.text_input("Author Name (optional - we'll try to detect it if not provided)", "")
-    
-    st.markdown("---")
-    st.markdown("### 📧 Where should we send your complete analysis?")
-    
-    email = st.text_input("Email address", placeholder="you@example.com", key="recipient_email")
-    
-    # Small "no spam" text under email
-    st.markdown("""
-    <p style="font-size: 12px; color: #666; margin-top: -10px; margin-bottom: 20px;">
-        Your book is 100% secure and will never be used for training or marketing. By using this service we will add you to the free waitlist without obligation.
-    </p>
-    """, unsafe_allow_html=True)
-    
-    if manuscript and email:
-        if st.button("🔍 GET MY FREE ANALYSIS", type="primary", use_container_width=True):
-            with st.spinner("Analyzing your book... (about 60 seconds)"):
-                       
-                # Use pre-extracted text
-                text = st.session_state.text
-                
-                # Process cover if provided
-                cover_analysis = None
-                if st.session_state.cover_file:
-                    cover_analysis = analyze_cover(st.session_state.cover_file)
-                    st.session_state.cover_analysis = cover_analysis
-                
-                # Run AI detection first
-                ai_detection = detect_ai_content(text, cover_analysis)
-                st.session_state.ai_detection = ai_detection
-                
-                # Analyze manuscript (FULL analysis)
-                analysis = analyze_book_complete(text, cover_analysis, book_title, author_name)
-                
-                if analysis:
-                    st.session_state.analysis_result = analysis
-                    
-                    # Get book title and author (use provided or detected)
-                    book_info = analysis.get('book_info', {})
-                    final_title = book_info.get('title', 'Your Book')
-                    final_author = book_info.get('author', 'Unknown Author')
-                    
-                    # Send email with AI detection results
-                    email_sent = send_email(email, analysis, cover_analysis, final_title, final_author, ai_detection)
-                    
-                    if email_sent:
-                        st.session_state.analysis_complete = True
-                        st.session_state.book_title = final_title
-                        st.session_state.author_name = final_author
-                        st.rerun()
-                    else:
-                        st.error("Failed to send email. Please try again.")
-                else:
-                    st.error("Analysis failed. Please try again.")
-    else:
-        if not manuscript:
-            st.info("👆 Please upload your manuscript")
-        elif not email:
-            st.info("👆 Please enter your email address")
-
-def show_results_section():
-    """Show results with preview and low score warning if needed"""
-    
-    analysis = st.session_state.analysis_result
-    ai_detection = st.session_state.ai_detection
-    marketability = analysis.get('marketability', {})
-    overall_score = marketability.get('overall_score', 0)
-    overall_grade = marketability.get('overall_grade', 'N/A')
-    book_info = analysis.get('book_info', {})
-    book_title = book_info.get('title', 'Your Book')
-    author_name = book_info.get('author', 'Unknown Author')
-    
-    # Get AI detection results for display
-    ai_overall = ai_detection.get('overall_assessment', {})
-    ai_conclusion = ai_overall.get('conclusion', 'Inconclusive')
-    
-    # Determine AI warning style
-    conclusion_lower = ai_conclusion.lower()
-    
-    if 'human' in conclusion_lower:
-        ai_bg_color = "#e8f5e8"
-        ai_border = "#4caf50"
-        ai_icon = "✍️✅"
-        ai_text = "HUMAN-GENERATED CONTENT"
-    elif 'clearly ai' in conclusion_lower or 'ai-generated' in conclusion_lower:
-        ai_bg_color = "#ffebee"
-        ai_border = "#f44336"
-        ai_icon = "🤖⚠️"
-        ai_text = "AI-GENERATED CONTENT"
-    elif 'assisted' in conclusion_lower:
-        ai_bg_color = "#fff3e0"
-        ai_border = "#ff9800"
-        ai_icon = "🤖❓"
-        ai_text = "POSSIBLE AI ASSISTANCE"
-    else:
-        ai_bg_color = "#f5f5f5"
-        ai_border = "#999999"
-        ai_icon = "❓"
-        ai_text = "INCONCLUSIVE"
-    
-    # Color based on score
-    if overall_score >= 80:
-        bg_color = "linear-gradient(135deg, #00b09b 0%, #96c93d 100%)"
-        emoji = "🚀"
-    elif overall_score >= 70:
-        bg_color = "linear-gradient(135deg, #f7971e 0%, #ffd200 100%)"
-        emoji = "📈"
-    elif overall_score >= 60:
-        bg_color = "linear-gradient(135deg, #ff6b6b 0%, #feca57 100%)"
-        emoji = "📊"
-    else:
-        bg_color = "linear-gradient(135deg, #ff4b4b 0%, #ff9f4b 100%)"
-        emoji = "⚠️"
-    
-    # Show title and author at top
-    st.markdown(f"""
-    <div style="text-align: center; margin-bottom: 20px;">
-        <h2>{book_title}</h2>
-        <h3 style="color: #666;">by {author_name}</h3>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # Show AI detection banner
-    st.markdown(f"""
-    <div style="padding: 15px; background: {ai_bg_color}; border-left: 5px solid {ai_border}; border-radius: 5px; margin-bottom: 20px;">
-        <div style="display: flex; align-items: center;">
-            <span style="font-size: 24px; margin-right: 10px;">{ai_icon}</span>
-            <div>
-                <strong>{ai_text}</strong><br>
-                <span style="color: #666;">{ai_overall.get('explanation', '')}</span>
+        with col2:
+            st.markdown("**🎨 Cover Image (PNG only)**")
+            st.markdown("""
+            <div class="png-warning">
+                ⚠️ <strong>PNG files only</strong> - Other formats will be rejected
             </div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # Show score
-    st.markdown(f"""
-    <div class="score-box" style="background: {bg_color};">
-        <p class="score-number">{overall_score}</p>
-        <p class="score-label">Marketability Score</p>
-        <p style="font-size: 18px; margin-top: 10px;">Grade: {overall_grade} {emoji}</p>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # Custom message based on score
-    if overall_score < 70:
-        weaknesses = analysis.get('areas_for_improvement', [])
-        top_weaknesses = weaknesses[:3] if weaknesses else ["Writing quality needs work", "Plot structure is unclear", "Character development is shallow"]
+            """, unsafe_allow_html=True)
+            
+            cover = st.file_uploader(
+                "Upload PNG only",
+                type=['png'],
+                key="cover",
+                label_visibility="collapsed"
+            )
+            if cover:
+                st.success(f"✅ PNG accepted: {cover.name}")
+                st.session_state.cover_file = cover
         
-        st.markdown(f"""
-        <div class="warning-box">
-            <h3 style="color: #cc5500; margin-top: 0;">⚠️ Your book needs more work</h3>
-            <p>Most books sell only about 100 copies. A bad book will never sell. For this reason, we only accept books with a score of 70% or better for marketing support.</p>
-            <p>Your book needs more work. Please read the analysis in your email to find areas of improvement.</p>
-            <p style="font-weight: bold;">Based on our analysis, here's what's holding it back:</p>
+        # AI Declaration
+        st.markdown("---")
+        st.markdown("### 🤖 AI Usage Declaration (Mandatory)")
+        
+        st.markdown("""
+        <div class="ai-declaration">
+            <p><strong>Please declare if AI was used:</strong></p>
             <ul>
-                <li>{top_weaknesses[0] if len(top_weaknesses) > 0 else "Writing needs significant revision"}</li>
-                <li>{top_weaknesses[1] if len(top_weaknesses) > 1 else "Plot requires stronger structure"}</li>
-                <li>{top_weaknesses[2] if len(top_weaknesses) > 2 else "Characters need more depth"}</li>
+                <li><strong>Exclusively Human</strong> - No deduction (0 points)</li>
+                <li><strong>AI Assisted</strong> - 10 point deduction</li>
+                <li><strong>AI Generated</strong> - 20 point deduction</li>
             </ul>
         </div>
-        
-        <div style="padding: 30px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; margin: 20px 0; color: white; text-align: center;">
-            <h2>✨ Ready to improve your book?</h2>
-            <p style="font-size: 18px;">Sign up for BardSpark to access:</p>
-            <p>🔍 ARC reader & influencer finder</p>
-            <p>🎨 Marketing asset generator</p>
-            <p>📊 Competitor tracker</p>
-            <p>🎬 BookTok video creator</p>
-            <p>🌐 Author website builder</p>
-            <p>And Much More</p>
-            <a href="https://bardspark.com/sign-up-for-the-waitlist/" style="background: white; color: #667eea; padding: 12px 30px; text-decoration: none; border-radius: 25px; font-weight: bold; display: inline-block; margin-top: 10px;">JOIN THE WAITLIST</a>
-        </div>
         """, unsafe_allow_html=True)
-    else:
-        st.success("Congratulations! Your book has a strong marketability score of 70% or better. We're happy to accept it for further marketing support. Check your email for the full analysis.")
+        
+        text_ai_options = ["Select one...", "Exclusively Human", "AI Assisted", "AI Generated"]
+        text_ai_index = 0
+        if st.session_state.text_ai_status and st.session_state.text_ai_status in text_ai_options:
+            text_ai_index = text_ai_options.index(st.session_state.text_ai_status)
+        
+        text_ai = st.selectbox(
+            "For the TEXT/MANUSCRIPT, was AI used? *",
+            options=text_ai_options,
+            index=text_ai_index,
+            key="text_ai_select"
+        )
+        
+        cover_ai = None
+        if cover:
+            cover_ai_options = ["Select one...", "Exclusively Human", "AI Assisted", "AI Generated"]
+            cover_ai_index = 0
+            if st.session_state.cover_ai_status and st.session_state.cover_ai_status in cover_ai_options:
+                cover_ai_index = cover_ai_options.index(st.session_state.cover_ai_status)
+            
+            cover_ai = st.selectbox(
+                "For the COVER, was AI used? *",
+                options=cover_ai_options,
+                index=cover_ai_index,
+                key="cover_ai_select"
+            )
+        
+        book_title = st.text_input("Book Title (optional)", "")
+        author_name = st.text_input("Author Name (optional)", "")
+        
+        st.markdown("---")
+        st.markdown("### 📧 Where should we send your analysis?")
+        
+        email = st.text_input("Email address", placeholder="you@example.com", key="recipient_email")
         
         st.markdown("""
-        <div style="padding: 30px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; margin: 20px 0; color: white; text-align: center;">
-            <h2>✨ Ready to MARKET your book?</h2>
-            <p style="font-size: 18px;">Sign up for BardSpark to access:</p>
-            <p>🔍 ARC reader & influencer finder</p>
-            <p>🎨 Marketing asset generator</p>
-            <p>📊 Competitor tracker</p>
-            <p>🎬 BookTok video creator</p>
-            <p>🌐 Author website builder</p>
-            <p>And Much More</p>
-            <a href="https://bardspark.com/sign-up-for-the-waitlist/" style="background: white; color: #667eea; padding: 12px 30px; text-decoration: none; border-radius: 25px; font-weight: bold; display: inline-block; margin-top: 10px;">JOIN THE WAITLIST</a>
+        <p style="font-size: 12px; color: #666; margin-top: -10px;">
+            Your book is 100% secure. By using this service we'll add you to the free waitlist.
+        </p>
+        """, unsafe_allow_html=True)
+        
+        # Validation
+        manuscript_ok = manuscript is not None
+        email_ok = email is not None and email.strip() != ""
+        text_ai_ok = text_ai != "Select one..."
+        cover_ai_ok = cover is None or (cover_ai is not None and cover_ai != "Select one...")
+        
+        if manuscript_ok and email_ok and text_ai_ok and cover_ai_ok:
+            if st.button("🔍 GET MY FREE ANALYSIS", type="primary"):
+                with st.spinner("Analyzing your book... (about 60 seconds)"):
+                    
+                    st.session_state.text_ai_status = text_ai
+                    st.session_state.cover_ai_status = cover_ai if cover else None
+                    
+                    text = st.session_state.text
+                    
+                    cover_analysis = None
+                    if cover:
+                        cover_analysis = analyze_cover(cover)
+                        st.session_state.cover_analysis = cover_analysis
+                    
+                    analysis = analyze_book_complete(text, cover_analysis, book_title, author_name)
+                    
+                    if analysis:
+                        st.session_state.analysis_result = analysis
+                        
+                        marketability = analysis.get('marketability', {})
+                        original_score = marketability.get('overall_score', 0)
+                        st.session_state.original_score = original_score
+                        
+                        final_score, deduction = calculate_score_with_ai_deduction(
+                            original_score, text_ai, cover_ai if cover else None
+                        )
+                        st.session_state.final_score = final_score
+                        st.session_state.deduction_applied = deduction
+                        
+                        book_info = analysis.get('book_info', {})
+                        final_title = book_info.get('title', 'Your Book')
+                        final_author = book_info.get('author', 'Unknown Author')
+                        
+                        email_sent = send_email(
+                            email, analysis, cover_analysis, final_title, final_author,
+                            text_ai, cover_ai if cover else None,
+                            original_score, final_score, deduction
+                        )
+                        
+                        if email_sent:
+                            st.session_state.analysis_complete = True
+                            st.session_state.book_title = final_title
+                            st.session_state.author_name = final_author
+                            st.rerun()
+                        else:
+                            st.error("Failed to send email. Please try again.")
+                    else:
+                        st.error("Analysis failed. Please try again.")
+        else:
+            if not manuscript_ok:
+                st.info("👆 Please upload your manuscript")
+            elif not text_ai_ok:
+                st.info("👆 Please select AI usage for your manuscript")
+            elif cover and not cover_ai_ok:
+                st.info("👆 Please select AI usage for your cover")
+            elif not email_ok:
+                st.info("👆 Please enter your email address")
+    
+    else:
+        # Results section
+        analysis = st.session_state.analysis_result
+        marketability = analysis.get('marketability', {})
+        final_score = st.session_state.final_score
+        original_score = st.session_state.original_score
+        deduction = st.session_state.deduction_applied
+        text_ai_status = st.session_state.text_ai_status
+        cover_ai_status = st.session_state.cover_ai_status
+        
+        overall_grade = marketability.get('overall_grade', 'N/A')
+        book_info = analysis.get('book_info', {})
+        book_title = book_info.get('title', 'Your Book')
+        author_name = book_info.get('author', 'Unknown Author')
+        
+        # AI banner styling
+        if text_ai_status == "Exclusively Human" and (not cover_ai_status or cover_ai_status == "Exclusively Human"):
+            ai_bg_color = "#e8f5e8"
+            ai_border = "#4caf50"
+            ai_icon = "✍️✅"
+            ai_text = "EXCLUSIVELY HUMAN-CREATED"
+        elif "AI Generated" in [text_ai_status, cover_ai_status]:
+            ai_bg_color = "#ffebee"
+            ai_border = "#f44336"
+            ai_icon = "🤖⚠️"
+            ai_text = "AI-GENERATED CONTENT"
+        elif "AI Assisted" in [text_ai_status, cover_ai_status]:
+            ai_bg_color = "#fff3e0"
+            ai_border = "#ff9800"
+            ai_icon = "🤖❓"
+            ai_text = "AI-ASSISTED CONTENT"
+        else:
+            ai_bg_color = "#f5f5f5"
+            ai_border = "#999999"
+            ai_icon = "❓"
+            ai_text = "AI USAGE NOT SPECIFIED"
+        
+        ai_banner = f'''
+        <div style="padding: 15px; background: {ai_bg_color}; border-left: 5px solid {ai_border}; border-radius: 5px; margin-bottom: 20px;">
+            <div style="display: flex; align-items: center;">
+                <span style="font-size: 24px; margin-right: 10px;">{ai_icon}</span>
+                <div>
+                    <strong>{ai_text}</strong><br>
+                    <span style="color: #666;">📝 Text: {text_ai_status}</span>
+        '''
+        
+        if cover_ai_status:
+            ai_banner += f'<br><span style="color: #666;">🎨 Cover: {cover_ai_status}</span>'
+        
+        ai_banner += f'<br><span style="color: #d32f2f;">Deduction applied: -{deduction} points</span>'
+        ai_banner += '''
+                </div>
+            </div>
+        </div>
+        '''
+        
+        st.markdown(ai_banner, unsafe_allow_html=True)
+        
+        # Score color
+        if final_score >= 80:
+            bg_color = "linear-gradient(135deg, #00b09b 0%, #96c93d 100%)"
+            emoji = "🚀"
+        elif final_score >= 70:
+            bg_color = "linear-gradient(135deg, #f7971e 0%, #ffd200 100%)"
+            emoji = "📈"
+        elif final_score >= 60:
+            bg_color = "linear-gradient(135deg, #ff6b6b 0%, #feca57 100%)"
+            emoji = "📊"
+        else:
+            bg_color = "linear-gradient(135deg, #ff4b4b 0%, #ff9f4b 100%)"
+            emoji = "⚠️"
+        
+        # Title and scores
+        st.markdown(f"""
+        <div style="text-align: center; margin-bottom: 20px;">
+            <h2>{book_title}</h2>
+            <h3 style="color: #666;">by {author_name}</h3>
         </div>
         """, unsafe_allow_html=True)
-    
-    st.success(f"✅ We've sent your complete analysis to your email!")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown(f"""
+            <div style="text-align: center; padding: 15px; background: #f0f0f0; border-radius: 10px;">
+                <p style="color: #666; margin: 0;">Original Score</p>
+                <p style="font-size: 36px; font-weight: bold; margin: 5px 0;">{original_score}</p>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        with col2:
+            st.markdown(f"""
+            <div style="text-align: center; padding: 15px; background: {ai_bg_color}; border-radius: 10px; border: 2px solid {ai_border};">
+                <p style="color: #666; margin: 0;">Final Score</p>
+                <p style="font-size: 36px; font-weight: bold; margin: 5px 0;">{final_score}</p>
+            </div>
+            """, unsafe_allow_html=True)
+        
+        # Final score box
+        st.markdown(f"""
+        <div style="text-align: center; padding: 2rem; background: {bg_color}; border-radius: 15px; margin: 20px 0; color: white;">
+            <p style="font-size: 72px; font-weight: bold; margin: 0;">{final_score}</p>
+            <p style="font-size: 24px;">Marketability Score</p>
+            <p style="font-size: 18px;">Grade: {overall_grade} {emoji}</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Warning or success message
+        if final_score < 70:
+            weaknesses = analysis.get('areas_for_improvement', [])
+            top_weaknesses = weaknesses[:3] if weaknesses else ["Writing quality needs work", "Plot structure is unclear", "Character development is shallow"]
+            
+            st.markdown(f"""
+            <div style="padding: 20px; background: #fff3cd; border-left: 5px solid #ff8800; border-radius: 5px; margin: 20px 0;">
+                <h3 style="color: #cc5500; margin-top: 0;">⚠️ Your book needs more work</h3>
+                <p>Most books sell only about 100 copies. A bad book will never sell. We only accept books with a score of 70% or better for marketing support.</p>
+                <p><strong>What's holding it back:</strong></p>
+                <ul>
+                    <li>{top_weaknesses[0]}</li>
+                    <li>{top_weaknesses[1]}</li>
+                    <li>{top_weaknesses[2]}</li>
+                </ul>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.success("🎉 Congratulations! Your book scores 70% or better and qualifies for marketing support.")
+        
+        # CTA
+        st.markdown("""
+        <div style="padding: 30px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 10px; margin: 20px 0; color: white; text-align: center;">
+            <h2>✨ Ready to market your book?</h2>
+            <p>Sign up for BardSpark to access ARC readers, marketing tools, and more</p>
+            <a href="https://bardspark.com/sign-up-for-the-waitlist/" target="_blank" style="background: white; color: #667eea; padding: 12px 30px; text-decoration: none; border-radius: 25px; font-weight: bold; display: inline-block; margin-top: 10px;">JOIN THE WAITLIST</a>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.success("✅ We've sent your complete analysis to your email!")
 
-def extract_text_for_analysis(file):
-    """Extract text for analysis only - simplified version"""
-    try:
-        file_bytes = file.getvalue()
-        
-        if file.type == "application/pdf":
-            pdf_reader = PyPDF2.PdfReader(io.BytesIO(file_bytes))
-            text = ""
-            for page in pdf_reader.pages[:20]:  # First 20 pages for analysis
-                text += page.extract_text() + "\n"
-            return text[:50000]
-            
-        elif file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-            doc = docx.Document(io.BytesIO(file_bytes))
-            text = ""
-            for para in doc.paragraphs[:1000]:  # First 1000 paragraphs for analysis
-                text += para.text + "\n"
-            return text[:50000]
-            
-        elif file.type == "application/vnd.oasis.opendocument.text":
-            try:
-                with zipfile.ZipFile(io.BytesIO(file_bytes)) as odt_zip:
-                    with odt_zip.open('content.xml') as xml_file:
-                        tree = ElementTree.parse(xml_file)
-                        root = tree.getroot()
-                        namespaces = {'text': 'urn:oasis:names:tc:opendocument:xmlns:text:1.0'}
-                        text_parts = []
-                        for elem in root.findall('.//text:p', namespaces)[:500]:
-                            if elem.text:
-                                text_parts.append(elem.text)
-                        return ' '.join(text_parts)[:50000]
-            except:
-                return file_bytes.decode("utf-8", errors="ignore")[:50000]
-        
-        elif file.type == "application/rtf" or file.type == "text/rtf" or file.name.endswith('.rtf'):
-            content = file_bytes.decode("utf-8", errors="ignore")
-            text = re.sub(r'\\[a-z]+[0-9-]*', ' ', content)
-            text = re.sub(r'\{[^}]*\}', ' ', text)
-            text = re.sub(r'\\\'[0-9a-f]{2}', ' ', text)
-            return ' '.join(text.split())[:50000]
-        
-        elif file.type == "application/msword":
-            return file_bytes.decode("utf-8", errors="ignore")[:50000]
-        
-        else:  # Plain text
-            return file_bytes.decode("utf-8", errors="ignore")[:50000]
-            
-    except Exception as e:
-        st.error(f"Error extracting text for analysis: {e}")
-        return ""
-
-# For running standalone
 if __name__ == "__main__":
     show_marketability_checker()
